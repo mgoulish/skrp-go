@@ -11,49 +11,53 @@ import (
 )
 
 type TestConfig struct {
-	SkupperVersion string `json:"skupper_version"` // e.g. "2.5.1" or "none" for baseline
-	TestType       string `json:"test_type"`       // NEW: "throughput", "latency", etc.
+	TestType       string `json:"test_type"`       // "throughput", "latency", ...
 	TestName       string `json:"test_name"`
 	Duration       int    `json:"duration_seconds"`
 	Parallel       int    `json:"parallel_streams"`
 	Protocol       string `json:"protocol"`
 	Port           int    `json:"port"`
+	// skupper_version is now taken from command line instead
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./skrp <config1.json> [config2.json] ...")
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: ./skrp <skupper_version> <config1.json> [config2.json] ...")
+		fmt.Println("Example: ./skrp 2.2.0 throughput_test.json")
 		os.Exit(1)
 	}
 
-	for i, configPath := range os.Args[1:] {
-		fmt.Printf("\n=== Running test %d: %s ===\n", i+1, configPath)
-		if err := runTest(configPath); err != nil {
+	skupperVersion := os.Args[1]
+	configFiles := os.Args[2:]
+
+	fmt.Printf("🚀 SKRP - Skupper Router Performance Tester\n")
+	fmt.Printf("Skupper Version: %s\n\n", skupperVersion)
+
+	for i, configPath := range configFiles {
+		fmt.Printf("=== Test %d/%d : %s ===\n", i+1, len(configFiles), configPath)
+		if err := runTest(skupperVersion, configPath); err != nil {
 			fmt.Printf("❌ Test failed: %v\n", err)
 		}
 	}
 }
 
-func runTest(configPath string) error {
+func runTest(skupperVersion, configPath string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return fmt.Errorf("failed to read config %s: %w", configPath, err)
 	}
 
 	var config TestConfig
 	if err := json.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse config: %w", err)
+		return fmt.Errorf("failed to parse config %s: %w", configPath, err)
 	}
 
 	// Defaults
 	if config.TestType == "" {
 		config.TestType = "throughput"
 	}
-	if config.SkupperVersion == "" {
-		config.SkupperVersion = "none"
-	}
 	if config.TestName == "" {
-		config.TestName = "unnamed"
+		config.TestName = "unnamed_test"
 	}
 	if config.Duration == 0 {
 		config.Duration = 10
@@ -68,12 +72,14 @@ func runTest(configPath string) error {
 		config.Port = 5201
 	}
 
-	// New directory structure:
-	// skrp_results / TEST_TYPE / YYYY_MM_DD / TEST_NAME / 0_routers / ...
+	// === NEW DIRECTORY STRUCTURE ===
+	// skrp_results / <skupper_version> / <test_type> / YYYY_MM_DD / <test_name> / 0_routers / ...
 	dateStr := time.Now().Format("2006_01_02")
+
 	resultsDir := filepath.Join(
 		"skrp_results",
-		config.TestType,           // ← now "throughput" instead of version
+		skupperVersion,      // ← New top-level version directory
+		config.TestType,
 		dateStr,
 		config.TestName,
 		"0_routers",
@@ -81,28 +87,36 @@ func runTest(configPath string) error {
 	)
 
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create results dir: %w", err)
+		return fmt.Errorf("failed to create results directory: %w", err)
 	}
 
-	// Save config for reproducibility
-	configCopyPath := filepath.Join(resultsDir, "config_used.json")
-	_ = os.WriteFile(configCopyPath, data, 0644)
+	// Save config + version info
+	type RunInfo struct {
+		SkupperVersion string    `json:"skupper_version"`
+		TestConfig     TestConfig `json:"test_config"`
+		RunTime        time.Time `json:"run_time"`
+	}
+	runInfo := RunInfo{
+		SkupperVersion: skupperVersion,
+		TestConfig:     config,
+		RunTime:        time.Now(),
+	}
 
-	fmt.Printf("🚀 0-router iperf3 %s test\n", config.TestType)
-	fmt.Printf("  Test type   : %s\n", config.TestType)
-	fmt.Printf("  Test name   : %s\n", config.TestName)
-	fmt.Printf("  Skupper ver : %s\n", config.SkupperVersion)
-	fmt.Printf("  Duration    : %d s\n", config.Duration)
-	fmt.Printf("  Parallel    : %d streams\n", config.Parallel)
-	fmt.Printf("  Results     : %s\n", resultsDir)
+	infoBytes, _ := json.MarshalIndent(runInfo, "", "  ")
+	_ = os.WriteFile(filepath.Join(resultsDir, "run_info.json"), infoBytes, 0644)
+	_ = os.WriteFile(filepath.Join(resultsDir, "config_used.json"), data, 0644)
+
+	fmt.Printf("Test Type   : %s\n", config.TestType)
+	fmt.Printf("Test Name   : %s\n", config.TestName)
+	fmt.Printf("Duration    : %d seconds\n", config.Duration)
+	fmt.Printf("Parallel    : %d streams\n", config.Parallel)
+	fmt.Printf("Results     : %s\n\n", resultsDir)
 
 	if err := runIperf3Test(config, resultsDir); err != nil {
 		return err
 	}
 
 	fmt.Printf("✅ Test completed successfully!\n")
-	fmt.Println("   Raw output saved. Next: parsing + graphics...")
-
 	return nil
 }
 
@@ -122,7 +136,7 @@ func runIperf3Test(config TestConfig, resultsDir string) error {
 		"-t", strconv.Itoa(config.Duration),
 		"-P", strconv.Itoa(config.Parallel),
 		"-f", "m",
-		"-J", // JSON output
+		"-J",
 	}
 	if config.Protocol == "udp" {
 		clientArgs = append(clientArgs, "-u")
@@ -131,17 +145,16 @@ func runIperf3Test(config TestConfig, resultsDir string) error {
 	clientCmd := exec.Command("iperf3", clientArgs...)
 	output, err := clientCmd.CombinedOutput()
 
-	// Save raw output
 	outputPath := filepath.Join(resultsDir, "iperf3_client_output.json")
 	if writeErr := os.WriteFile(outputPath, output, 0644); writeErr != nil {
-		fmt.Printf("Warning: could not write output file: %v\n", writeErr)
+		fmt.Printf("Warning: failed to save output: %v\n", writeErr)
 	}
 
 	serverCmd.Process.Kill()
 	serverCmd.Wait()
 
 	if err != nil {
-		return fmt.Errorf("iperf3 failed: %w\n%s", err, string(output))
+		return fmt.Errorf("iperf3 client error: %w\n%s", err, string(output))
 	}
 
 	return nil
