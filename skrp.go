@@ -19,7 +19,7 @@ type TestConfig struct {
 	Protocol       string `json:"protocol"`
 	Port           int    `json:"port"`
 	Routers        int    `json:"routers"`
-	YMaxMbps       int    `json:"y_max_mbps"`   // ← NEW
+	YMaxMbps       int    `json:"y_max_mbps"`
 }
 
 type Iperf3Result struct {
@@ -74,7 +74,7 @@ func runTest(skupperVersion, configPath string) error {
 	if config.Protocol == "" { config.Protocol = "tcp" }
 	if config.Port == 0 { config.Port = 5201 }
 	if config.Routers < 0 { config.Routers = 0 }
-	if config.YMaxMbps <= 0 { config.YMaxMbps = 600000 }   // ← Default 600,000 Mbps
+	if config.YMaxMbps <= 0 { config.YMaxMbps = 600000 }
 
 	dateStr := time.Now().Format("2006_01_02")
 	routerStr := fmt.Sprintf("%d_routers", config.Routers)
@@ -89,7 +89,7 @@ func runTest(skupperVersion, configPath string) error {
 		os.MkdirAll(dir, 0755)
 	}
 
-	// Save metadata (including new field)
+	// Save metadata
 	type RunInfo struct {
 		SkupperVersion string     `json:"skupper_version"`
 		TestConfig     TestConfig `json:"test_config"`
@@ -100,13 +100,17 @@ func runTest(skupperVersion, configPath string) error {
 	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
 	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), data, 0644)
 
-	// Router start (unchanged)
-	var routerProc *os.Process
-	if config.Routers == 1 {
-		fmt.Println("   → Starting Skupper Router...")
-		routerProc, _ = startSkupperRouter(baseDir, commandsDir)
-		defer cleanupRouter(routerProc)
-		time.Sleep(2 * time.Second)
+	// Start routers if needed
+	var routerProcs []*os.Process
+	if config.Routers > 0 {
+		fmt.Printf("   → Starting %d Skupper Router(s)...\n", config.Routers)
+		var err error
+		routerProcs, err = startSkupperRouters(config.Routers, baseDir, commandsDir)
+		if err != nil {
+			return err
+		}
+		defer cleanupRouters(routerProcs)
+		time.Sleep(3 * time.Second)
 	}
 
 	fmt.Printf("   → Running iperf3 %s test with %d router(s)\n", config.Protocol, config.Routers)
@@ -116,59 +120,103 @@ func runTest(skupperVersion, configPath string) error {
 	}
 
 	fmt.Printf("✅ Test completed!\n")
-	fmt.Printf("   Y-axis max set to: %d Mbps\n", config.YMaxMbps)
+	fmt.Printf("   Y-axis max: %d Mbps\n", config.YMaxMbps)
 	return nil
 }
 
-// ====================== Router & iperf3 functions (unchanged from last version) ======================
-func startSkupperRouter(baseDir, commandsDir string) (*os.Process, error) {
-	// ... same as previous version ...
-	routerConfig := `router {
+// ====================== Multi-Router Support ======================
+func startSkupperRouters(numRouters int, baseDir, commandsDir string) ([]*os.Process, error) {
+	var procs []*os.Process
+
+	// Router A (always needed for 1+ routers)
+	routerAConfig := `router {
     mode: interior
     id: skrp-router-A
     workerThreads: 4
+}
+listener {
+    stripAnnotations: no
+    idleTimeoutSeconds: 120
+    saslMechanisms: ANONYMOUS
+    host: 0.0.0.0
+    role: inter-router
+    authenticatePeer: no
+    port: 25000
 }
 tcpListener {
     host: 0.0.0.0
     port: 5800
     address: router-test
-    siteId: skrp-test
+    siteId: skrp-two-router-test
+}
+`
+	_ = os.WriteFile(filepath.Join(baseDir, "router-A.conf"), []byte(routerAConfig), 0644)
+	_ = os.WriteFile(filepath.Join(commandsDir, "router-A.conf"), []byte(routerAConfig), 0644)
+
+	cmdA := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-A.conf"))
+	cmdA.Stdout = os.Stdout
+	cmdA.Stderr = os.Stderr
+	cmdA.Start()
+	procs = append(procs, cmdA.Process)
+	fmt.Printf("   → Router A started (PID %d)\n", cmdA.Process.Pid)
+
+	if numRouters >= 2 {
+		// Router B
+		routerBConfig := `router {
+    mode: interior
+    id: skrp-router-B
+    workerThreads: 4
+}
+connector {
+    stripAnnotations: no
+    name: connectorToA
+    idleTimeoutSeconds: 120
+    saslMechanisms: ANONYMOUS
+    host: 127.0.0.1
+    role: inter-router
+    port: 25000
 }
 tcpConnector {
     host: 127.0.0.1
     port: 5801
     address: router-test
-    siteId: skrp-test
+    siteId: skrp-two-router-test
 }
 `
-	configPath := filepath.Join(baseDir, "router.conf")
-	_ = os.WriteFile(configPath, []byte(routerConfig), 0644)
-	_ = os.WriteFile(filepath.Join(commandsDir, "router.conf"), []byte(routerConfig), 0644)
+		_ = os.WriteFile(filepath.Join(baseDir, "router-B.conf"), []byte(routerBConfig), 0644)
+		_ = os.WriteFile(filepath.Join(commandsDir, "router-B.conf"), []byte(routerBConfig), 0644)
 
-	cmdText := fmt.Sprintf("#!/bin/bash\nskrouterd -c %s\n", configPath)
-	_ = os.WriteFile(filepath.Join(commandsDir, "start_router.sh"), []byte(cmdText), 0755)
+		cmdB := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-B.conf"))
+		cmdB.Stdout = os.Stdout
+		cmdB.Stderr = os.Stderr
+		cmdB.Start()
+		procs = append(procs, cmdB.Process)
+		fmt.Printf("   → Router B started (PID %d)\n", cmdB.Process.Pid)
+	}
 
-	cmd := exec.Command("skrouterd", "-c", configPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Start()
-	fmt.Printf("   → Router started (PID %d)\n", cmd.Process.Pid)
-	return cmd.Process, nil
+	return procs, nil
 }
 
-func cleanupRouter(proc *os.Process) {
-	if proc != nil {
-		fmt.Println("   → Shutting down Skupper Router...")
-		proc.Kill()
-		proc.Wait()
+func cleanupRouters(procs []*os.Process) {
+	fmt.Println("   → Shutting down Skupper Routers...")
+	for _, p := range procs {
+		if p != nil {
+			p.Kill()
+			p.Wait()
+		}
 	}
 }
 
+// ====================== iperf3 Test ======================
 func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsDir string) error {
 	serverPort := config.Port
 	clientPort := config.Port
 	clientTarget := "127.0.0.1"
+
 	if config.Routers == 1 {
+		serverPort = 5801
+		clientPort = 5800
+	} else if config.Routers == 2 {
 		serverPort = 5801
 		clientPort = 5800
 	}
@@ -182,14 +230,21 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_server.sh"), []byte(serverCmdStr), 0755)
 	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_client.sh"), []byte(clientCmdStr), 0755)
 
-	// ... (server + client execution same as before) ...
+	// Start server
 	serverCmd := exec.Command("iperf3", "-s", "-p", strconv.Itoa(serverPort), "-1")
 	serverCmd.Stderr = os.Stderr
 	serverCmd.Start()
 	time.Sleep(800 * time.Millisecond)
 
-	clientArgs := []string{"-c", clientTarget, "-p", strconv.Itoa(clientPort),
-		"-t", strconv.Itoa(config.Duration), "-P", strconv.Itoa(config.Parallel), "-f", "m", "-J"}
+	// Client
+	clientArgs := []string{
+		"-c", clientTarget,
+		"-p", strconv.Itoa(clientPort),
+		"-t", strconv.Itoa(config.Duration),
+		"-P", strconv.Itoa(config.Parallel),
+		"-f", "m",
+		"-J",
+	}
 	if config.Protocol == "udp" {
 		clientArgs = append(clientArgs, "-u")
 	}
@@ -205,12 +260,16 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	return nil
 }
 
-// ====================== Post-processing with Y-max control ======================
+// ====================== Post-processing (with Y-max) ======================
 func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
-	// ... data extraction (same as before) ...
+	// (same as previous version - data extraction + plotting)
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
+	if start == -1 {
+		return nil
+	}
+
 	var result Iperf3Result
 	json.Unmarshal([]byte(content[start:]), &result)
 
@@ -239,7 +298,7 @@ set output 'throughput.png'
 set title '` + cleanTitle + ` (` + strconv.Itoa(config.Parallel) + ` streams, ` + strconv.Itoa(config.Duration) + ` sec) - ` + strconv.Itoa(config.Routers) + ` router(s)'
 set xlabel 'Time (seconds)'
 set ylabel 'Throughput (Mbps)'
-set yrange [0:` + strconv.Itoa(config.YMaxMbps) + `]    # Controlled by config
+set yrange [0:` + strconv.Itoa(config.YMaxMbps) + `]
 set grid
 set key outside
 
