@@ -4,5 +4,6 @@
   "test_name": "iperf3_tcp_4streams_30s",
   "duration_seconds": 30,
   "parallel_streams": 4,
-  "protocol": "tcp"
+  "protocol": "tcp",
+  "y_max_mbps": 600000
 }
