@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,9 @@ func main() {
 		if err := runTest(skupperVersion, configPath); err != nil {
 			fmt.Printf("❌ Test failed: %v\n", err)
 		}
+		if i < len(configFiles)-1 {
+			time.Sleep(4 * time.Second)
+		}
 	}
 }
 
@@ -100,36 +104,75 @@ func runTest(skupperVersion, configPath string) error {
 	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
 	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), data, 0644)
 
-	// Start routers if needed
+	// Start routers
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
-		fmt.Printf("   → Starting %d Skupper Router(s)...\n", config.Routers)
-		var err error
-		routerProcs, err = startSkupperRouters(config.Routers, baseDir, commandsDir)
-		if err != nil {
-			return err
-		}
+		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir)
 		defer cleanupRouters(routerProcs)
-		time.Sleep(3 * time.Second)
+		waitForRouterReady()
 	}
 
-	fmt.Printf("   → Running iperf3 %s test with %d router(s)\n", config.Protocol, config.Routers)
+	fmt.Printf("   → Running iperf3 test with %d router(s)\n", config.Routers)
 
 	if err := runIperf3Test(config, outputDir, dataDir, graphicsDir, commandsDir); err != nil {
 		return err
 	}
 
-	fmt.Printf("✅ Test completed!\n")
-	fmt.Printf("   Y-axis max: %d Mbps\n", config.YMaxMbps)
+	fmt.Printf("✅ Test completed! Y-max = %d Mbps\n", config.YMaxMbps)
 	return nil
 }
 
-// ====================== Multi-Router Support ======================
+func waitForRouterReady() {
+	fmt.Println("   → Waiting for router listener on port 5800...")
+	for i := 0; i < 25; i++ {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:5800", 600*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			fmt.Println("   → Router listener is READY!")
+			return
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	fmt.Println("   Warning: Router listener not responding after ~17s")
+}
+
+// ====================== Router Management ======================
 func startSkupperRouters(numRouters int, baseDir, commandsDir string) ([]*os.Process, error) {
 	var procs []*os.Process
 
-	// Router A (always needed for 1+ routers)
-	routerAConfig := `router {
+	if numRouters == 1 {
+		// Single router: both listener and connector
+		routerConfig := `router {
+    mode: interior
+    id: skrp-router-A
+    workerThreads: 4
+}
+tcpListener {
+    host: 0.0.0.0
+    port: 5800
+    address: router-test
+    siteId: skrp-test
+}
+tcpConnector {
+    host: 127.0.0.1
+    port: 5801
+    address: router-test
+    siteId: skrp-test
+}`
+		writeRouterFiles(baseDir, commandsDir, "router.conf", routerConfig)
+
+		cmd := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Start()
+		procs = append(procs, cmd.Process)
+		fmt.Printf("   → Single Router started (PID %d)\n", cmd.Process.Pid)
+
+	} else if numRouters == 2 {
+		// Two-router chain (unchanged from before)
+		// Router A (listener)
+		routerA := `router {
     mode: interior
     id: skrp-router-A
     workerThreads: 4
@@ -147,22 +190,19 @@ tcpListener {
     host: 0.0.0.0
     port: 5800
     address: router-test
-    siteId: skrp-two-router-test
-}
-`
-	_ = os.WriteFile(filepath.Join(baseDir, "router-A.conf"), []byte(routerAConfig), 0644)
-	_ = os.WriteFile(filepath.Join(commandsDir, "router-A.conf"), []byte(routerAConfig), 0644)
+    siteId: skrp-multi-test
+}`
+		writeRouterFiles(baseDir, commandsDir, "router-A.conf", routerA)
 
-	cmdA := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-A.conf"))
-	cmdA.Stdout = os.Stdout
-	cmdA.Stderr = os.Stderr
-	cmdA.Start()
-	procs = append(procs, cmdA.Process)
-	fmt.Printf("   → Router A started (PID %d)\n", cmdA.Process.Pid)
+		cmdA := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-A.conf"))
+		cmdA.Stdout = os.Stdout
+		cmdA.Stderr = os.Stderr
+		cmdA.Start()
+		procs = append(procs, cmdA.Process)
+		fmt.Printf("   → Router A started (PID %d)\n", cmdA.Process.Pid)
 
-	if numRouters >= 2 {
-		// Router B
-		routerBConfig := `router {
+		// Router B (connector)
+		routerB := `router {
     mode: interior
     id: skrp-router-B
     workerThreads: 4
@@ -180,11 +220,9 @@ tcpConnector {
     host: 127.0.0.1
     port: 5801
     address: router-test
-    siteId: skrp-two-router-test
-}
-`
-		_ = os.WriteFile(filepath.Join(baseDir, "router-B.conf"), []byte(routerBConfig), 0644)
-		_ = os.WriteFile(filepath.Join(commandsDir, "router-B.conf"), []byte(routerBConfig), 0644)
+    siteId: skrp-multi-test
+}`
+		writeRouterFiles(baseDir, commandsDir, "router-B.conf", routerB)
 
 		cmdB := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-B.conf"))
 		cmdB.Stdout = os.Stdout
@@ -197,8 +235,13 @@ tcpConnector {
 	return procs, nil
 }
 
+func writeRouterFiles(baseDir, commandsDir, filename, content string) {
+	_ = os.WriteFile(filepath.Join(baseDir, filename), []byte(content), 0644)
+	_ = os.WriteFile(filepath.Join(commandsDir, filename), []byte(content), 0644)
+}
+
 func cleanupRouters(procs []*os.Process) {
-	fmt.Println("   → Shutting down Skupper Routers...")
+	fmt.Println("   → Shutting down routers...")
 	for _, p := range procs {
 		if p != nil {
 			p.Kill()
@@ -211,34 +254,27 @@ func cleanupRouters(procs []*os.Process) {
 func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsDir string) error {
 	serverPort := config.Port
 	clientPort := config.Port
-	clientTarget := "127.0.0.1"
-
-	if config.Routers == 1 {
-		serverPort = 5801
-		clientPort = 5800
-	} else if config.Routers == 2 {
+	if config.Routers >= 1 {
 		serverPort = 5801
 		clientPort = 5800
 	}
 
 	// Save commands
-	serverCmdStr := fmt.Sprintf("#!/bin/bash\niperf3 -s -p %d -1\n", serverPort)
-	clientCmdStr := fmt.Sprintf("#!/bin/bash\niperf3 -c %s -p %d -t %d -P %d -f m -J%s\n",
-		clientTarget, clientPort, config.Duration, config.Parallel,
-		map[bool]string{true: " -u", false: ""}[config.Protocol == "udp"])
+	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_server.sh"),
+		[]byte(fmt.Sprintf("#!/bin/bash\niperf3 -s -p %d -1\n", serverPort)), 0755)
+	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_client.sh"),
+		[]byte(fmt.Sprintf("#!/bin/bash\niperf3 -c 127.0.0.1 -p %d -t %d -P %d -f m -J\n",
+			clientPort, config.Duration, config.Parallel)), 0755)
 
-	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_server.sh"), []byte(serverCmdStr), 0755)
-	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_client.sh"), []byte(clientCmdStr), 0755)
-
-	// Start server
+	fmt.Printf("   → Starting iperf3 server on port %d\n", serverPort)
 	serverCmd := exec.Command("iperf3", "-s", "-p", strconv.Itoa(serverPort), "-1")
 	serverCmd.Stderr = os.Stderr
 	serverCmd.Start()
-	time.Sleep(800 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
-	// Client
+	fmt.Printf("   → Starting iperf3 client to port %d\n", clientPort)
 	clientArgs := []string{
-		"-c", clientTarget,
+		"-c", "127.0.0.1",
 		"-p", strconv.Itoa(clientPort),
 		"-t", strconv.Itoa(config.Duration),
 		"-P", strconv.Itoa(config.Parallel),
@@ -250,8 +286,12 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	}
 
 	clientCmd := exec.Command("iperf3", clientArgs...)
-	output, _ := clientCmd.CombinedOutput()
+	output, err := clientCmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(outputDir, "iperf3_client_output.json"), output, 0644)
+
+	if err != nil {
+		fmt.Printf("   Warning: iperf3 client error: %v\n", err)
+	}
 
 	serverCmd.Process.Kill()
 	serverCmd.Wait()
@@ -260,13 +300,14 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	return nil
 }
 
-// ====================== Post-processing (with Y-max) ======================
+// Post-processing (same as before)
 func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
-	// (same as previous version - data extraction + plotting)
+	// ... (your existing working post-processing code) ...
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
 	if start == -1 {
+		fmt.Println("   Warning: No JSON from iperf3")
 		return nil
 	}
 
@@ -318,6 +359,7 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 	pngPath := filepath.Join(graphicsDir, "throughput.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		_ = exec.Command("display", pngPath).Start()
+		fmt.Println("   → Graph displayed")
 	}
 
 	return nil
