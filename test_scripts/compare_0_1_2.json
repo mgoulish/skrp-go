@@ -1,0 +1,8 @@
+{
+  "test_type": "throughput",
+  "type": "comparison",
+  "name": "0_vs_1_vs_2",
+  "title": "Throughput: 0 vs 1 vs 2 Routers",
+  "tests": ["0_routers", "1_routers", "2_routers"],
+  "y_max_mbps": 600000
+}
