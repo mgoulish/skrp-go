@@ -1,5 +1,6 @@
 {
   "test_type": "throughput",
+  "cpu": 200,
   "test_name": "iperf3_tcp_4streams_30s_1router",
   "duration_seconds": 30,
   "parallel_streams": 4,

@@ -1,7 +1,7 @@
 #! /bin/bash
 
 
-./skrp  2.2.0  ./test_scripts/0_router.json 
+./skrp  2.2.0  ./test_scripts/1_router.json 
 
 #./skrp  2.2.0  ./test_scripts/compare_0_1_2.json
 

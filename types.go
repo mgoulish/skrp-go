@@ -13,6 +13,7 @@ type TestConfig struct {
 	Port           int      `json:"port"`
 	Routers        int      `json:"routers"`
 	YMaxMbps       int      `json:"y_max_mbps"`
+        CPU            int      `json:"cpu"`
 
 	// Comparison only
 	ComparisonName string   `json:"name"`

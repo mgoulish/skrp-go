@@ -18,6 +18,7 @@ func waitForRouterReady() {
 		if err == nil {
 			conn.Close()
 			fmt.Println("   → Router listener is READY!")
+		        time.Sleep(500 * time.Millisecond)
 			return
 		}
 		time.Sleep(700 * time.Millisecond)
@@ -25,7 +26,7 @@ func waitForRouterReady() {
 	fmt.Println("   Warning: Router listener not responding after ~24s")
 }
 
-func startSkupperRouters(numRouters int, baseDir, commandsDir string) ([]*os.Process, error) {
+func startSkupperRouters(numRouters int, baseDir, commandsDir string, cpu int) ([]*os.Process, error) {
 	var procs []*os.Process
 
 	if numRouters == 1 {
@@ -48,7 +49,9 @@ tcpConnector {
 }`
 		writeRouterFiles(baseDir, commandsDir, "router.conf", routerConfig)
 
-		cmd := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
+                cpu_quota_str := fmt.Sprintf("--property=CPUQuota=%d%%", cpu)
+		// without CPU quota:  cmd := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
+		cmd := exec.Command("systemd-run", "--scope", cpu_quota_str, "--", "skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Start()

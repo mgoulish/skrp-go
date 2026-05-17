@@ -48,10 +48,8 @@ func runComparison(skupperVersion string, config TestConfig) error {
 	for i, name := range config.Tests {
 		fullPath := findLatestTestPath(skupperVersion, config.TestType, dateStr, name)
 		dataFile := filepath.Join(fullPath, "output/data/iperf3_client_output.data")
-		fp("MDEBUG: runComparison: fullPath: |%s|\n", fullPath)
 		absData, _ := filepath.Abs(dataFile)
 
-		fp("MDEBUG: runComparison: absData: |%s|\n", absData)
 		if _, err := os.Stat(absData); err != nil {
 			fmt.Printf("   Warning: Could not find data for '%s'\n", name)
 			continue
@@ -109,7 +107,6 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 	})
 
 	for _, e := range entries {
-		fp("MDEBUG: findLatestTestPath: looking for: |%s| in |%s|\n", e.Name(), name)
                 if strings.Contains(e.Name(), name) || strings.Contains(e.Name(), strings.TrimSuffix(name, "_routers")) {
 
 			candidate := filepath.Join(base, e.Name(), name)
