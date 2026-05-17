@@ -1,0 +1,10 @@
+{
+  "test_type": "throughput",
+  "test_name": "iperf3_tcp_4streams_30s_1router",
+  "duration_seconds": 30,
+  "parallel_streams": 4,
+  "protocol": "tcp",
+  "port": 5201,
+  "routers": 1,
+  "y_max_mbps": 600000
+}

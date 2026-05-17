@@ -2,15 +2,13 @@ package main
 
 import (
 	"fmt"
-        "net"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 )
 
-
-//router
 func waitForRouterReady() {
 	fmt.Println("   → Waiting for router listener on port 5800...")
 	for i := 0; i < 35; i++ {
@@ -18,7 +16,7 @@ func waitForRouterReady() {
 		if err == nil {
 			conn.Close()
 			fmt.Println("   → Router listener is READY!")
-		        time.Sleep(500 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			return
 		}
 		time.Sleep(700 * time.Millisecond)
@@ -28,6 +26,10 @@ func waitForRouterReady() {
 
 func startSkupperRouters(numRouters int, baseDir, commandsDir string, cpu int) ([]*os.Process, error) {
 	var procs []*os.Process
+
+	// We will test cpu for zero just before command execution.
+	cpu_quota_str := fmt.Sprintf("--property=CPUQuota=%d%%", cpu)
+	var cmd, cmdA, cmdB *exec.Cmd
 
 	if numRouters == 1 {
 		routerConfig := `router {
@@ -49,9 +51,18 @@ tcpConnector {
 }`
 		writeRouterFiles(baseDir, commandsDir, "router.conf", routerConfig)
 
-                cpu_quota_str := fmt.Sprintf("--property=CPUQuota=%d%%", cpu)
-		// without CPU quota:  cmd := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
-		cmd := exec.Command("systemd-run", "--scope", cpu_quota_str, "--", "skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
+		if cpu == 0 {
+			cmd = exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router.conf"))
+		} else {
+			cmd = exec.Command("systemd-run",
+				"--user",
+				"--scope",
+				cpu_quota_str,
+				"--",
+				"skrouterd",
+				"-c", filepath.Join(baseDir, "router.conf"),
+			)
+		}
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Start()
@@ -81,7 +92,20 @@ tcpListener {
 }`
 		writeRouterFiles(baseDir, commandsDir, "router-A.conf", routerA)
 
-		cmdA := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-A.conf"))
+		if cpu == 0 {
+			cmdA = exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-A.conf"))
+		} else {
+			cmdA = exec.Command("systemd-run",
+				"--user",
+				"--scope",
+				cpu_quota_str,
+				"--",
+				"skrouterd",
+				"-c",
+				filepath.Join(baseDir, "router-A.conf"),
+			)
+		}
+
 		cmdA.Stdout = os.Stdout
 		cmdA.Stderr = os.Stderr
 		cmdA.Start()
@@ -110,7 +134,19 @@ tcpConnector {
 }`
 		writeRouterFiles(baseDir, commandsDir, "router-B.conf", routerB)
 
-		cmdB := exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-B.conf"))
+		if cpu == 0 {
+			cmdB = exec.Command("skrouterd", "-c", filepath.Join(baseDir, "router-B.conf"))
+		} else {
+			cmdB = exec.Command("systemd-run",
+				"--user",
+				"--scope",
+				cpu_quota_str,
+				"--",
+				"skrouterd",
+				"-c",
+				filepath.Join(baseDir, "router-B.conf"),
+			)
+		}
 		cmdB.Stdout = os.Stdout
 		cmdB.Stderr = os.Stderr
 		cmdB.Start()
@@ -135,4 +171,3 @@ func cleanupRouters(procs []*os.Process) {
 		}
 	}
 }
-
