@@ -23,9 +23,10 @@ func runNormalTest(skupperVersion string, config TestConfig, rawData []byte) err
 	if config.YMaxMbps <= 0 { config.YMaxMbps = 600000 }
 
 	dateStr := time.Now().Format("2006_01_02")
-	routerStr := fmt.Sprintf("%d_routers", config.Routers)
+	//routerStr := fmt.Sprintf("%d_routers", config.Routers)
 
-	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName, routerStr)
+	//baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName, routerStr)
+	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
 	outputDir := filepath.Join(baseDir, "output")
 	commandsDir := filepath.Join(baseDir, "commands")
 	dataDir := filepath.Join(outputDir, "data")

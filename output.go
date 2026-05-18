@@ -48,6 +48,7 @@ func runComparison(skupperVersion string, config TestConfig) error {
 	for i, name := range config.Tests {
 		fullPath := findLatestTestPath(skupperVersion, config.TestType, dateStr, name)
 		dataFile := filepath.Join(fullPath, "output/data/iperf3_client_output.data")
+                fp("MDEBUG: looking for datafile at: |%s|\n", dataFile)
 		absData, _ := filepath.Abs(dataFile)
 
 		if _, err := os.Stat(absData); err != nil {
@@ -101,12 +102,25 @@ print "✅ Comparison plot generated"
 
 func findLatestTestPath(version, testType, dateStr, name string) string {
 	base := filepath.Join("skrp_results", version, testType, dateStr)
+        fp("MDEBUG: base: |%s|\n", base)
 	entries, _ := os.ReadDir(base)
+        fp("MDEBUG: entries: %v\n", entries)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() > entries[j].Name()
 	})
 
 	for _, e := range entries {
+        fp ( "MDEBUG: entry: |%s|\n", e )
+                if name == e.Name() {
+                  fp ( "MDEBUG: that's it.\n")
+                  // HERE
+                  //candidate := filepath.Join(base, e.Name())
+                  path  := filepath.Join(base, e.Name())
+                  fp ( "MDEBUG: path: |%s|\n", path )
+                  return path
+                }
+
+                /*
                 if strings.Contains(e.Name(), name) || strings.Contains(e.Name(), strings.TrimSuffix(name, "_routers")) {
 
 			candidate := filepath.Join(base, e.Name(), name)
@@ -118,8 +132,9 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 				return filepath.Join(base, e.Name())
 			}
 		}
+                */
 	}
-	return name
+	return "NONE"
 }
 
 func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
