@@ -1,0 +1,8 @@
+{
+  "test_type": "throughput",
+  "type": "comparison",
+  "name": "2_routers_all_cpus",
+  "title": "Throughput: 2 Router, All CPU Levels",
+  "tests": ["2-router_cpu-25", "2-router_cpu-50", "2-router_cpu-100", "2-router_cpu-200", "2-router_cpu-300", "2-router_cpu-400", "2-router_cpu-500" ],
+  "y_max_mbps": 70000
+}
