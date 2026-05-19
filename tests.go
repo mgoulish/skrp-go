@@ -1,8 +1,10 @@
 package main
 
 import (
+        "context"
 	"encoding/json"
 	"fmt"
+        "net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,8 +13,8 @@ import (
 )
 
 
-// ====================== NORMAL TEST ======================
-func runNormalTest(skupperVersion string, config TestConfig, rawData []byte) error {
+// ====================== RUN TEST ======================
+func runTest(skupperVersion string, config TestConfig, rawData []byte) error {
 	if config.TestType == "" { config.TestType = "throughput" }
 	if config.TestName == "" { config.TestName = "unnamed_test" }
 	if config.Duration == 0 { config.Duration = 10 }
@@ -22,10 +24,13 @@ func runNormalTest(skupperVersion string, config TestConfig, rawData []byte) err
 	if config.Routers < 0 { config.Routers = 0 }
 	if config.YMaxMbps <= 0 { config.YMaxMbps = 600000 }
 
-	dateStr := time.Now().Format("2006_01_02")
-	//routerStr := fmt.Sprintf("%d_routers", config.Routers)
+	// === NEW: dispatch to specialized test runners ===
+	if config.TestType == "http-latency" {
+		return runHttpLatencyTest(skupperVersion, config, rawData)
+	}
+	// ================================================
 
-	//baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName, routerStr)
+	dateStr := time.Now().Format("2006_01_02")
 	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
 	outputDir := filepath.Join(baseDir, "output")
 	commandsDir := filepath.Join(baseDir, "commands")
@@ -122,3 +127,124 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	return nil
 }
 
+// ====================== HTTP LATENCY TEST ======================
+func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte) error {
+	// === Own defaults (duplicated style from runNormalTest) ===
+	if config.TestType == "" {
+		config.TestType = "http-latency"
+	}
+	if config.TestName == "" {
+		config.TestName = "http-latency"
+	}
+	if config.NumRequests == 0 {
+		config.NumRequests = 10000
+	}
+	if config.Concurrency == 0 {
+		config.Concurrency = 50
+	}
+	if config.Routers < 0 {
+		config.Routers = 0
+	}
+
+	dateStr := time.Now().Format("2006_01_02")
+	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
+	outputDir := filepath.Join(baseDir, "output")
+	commandsDir := filepath.Join(baseDir, "commands")
+	dataDir := filepath.Join(outputDir, "data")
+	graphicsDir := filepath.Join(baseDir, "graphics")
+
+	for _, dir := range []string{outputDir, commandsDir, dataDir, graphicsDir} {
+		os.MkdirAll(dir, 0755)
+	}
+
+	// Write commands + metadata (exact same pattern as runNormalTest)
+	writeCommands(config, commandsDir)
+
+	type RunInfo struct {
+		SkupperVersion string     `json:"skupper_version"`
+		TestConfig     TestConfig `json:"test_config"`
+		RunTime        time.Time  `json:"run_time"`
+	}
+	runInfo := RunInfo{SkupperVersion: skupperVersion, TestConfig: config, RunTime: time.Now()}
+	infoBytes, _ := json.MarshalIndent(runInfo, "", "  ")
+	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
+	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), rawData, 0644)
+
+	// === Start routers if requested (exact copy from runNormalTest) ===
+	var routerProcs []*os.Process
+	if config.Routers > 0 {
+		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, config.CPU)
+		defer cleanupRouters(routerProcs)
+
+		waitTime := 5 * time.Second
+		if config.Routers >= 2 {
+			waitTime = 10 * time.Second
+		}
+		fmt.Printf("   → Waiting %v for routers to sync...\n", waitTime)
+		time.Sleep(waitTime)
+
+		waitForRouterReady()
+	}
+
+	// === Start minimal HTTP echo server (the backend) ===
+	serverPort := 5801
+	if config.Routers == 0 {
+		serverPort = 5800
+	}
+	fmt.Printf("   → Starting minimal HTTP echo server on port %d\n", serverPort)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("OK"))
+	})
+
+	server := &http.Server{Addr: fmt.Sprintf(":%d", serverPort), Handler: mux}
+	serverDone := make(chan struct{})
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("HTTP server error: %v\n", err)
+		}
+		close(serverDone)
+	}()
+	time.Sleep(800 * time.Millisecond) // let server start
+
+	// === Decide target URL for hey (through router or direct) ===
+	targetURL := "http://127.0.0.1:5800/ping"
+	if config.Routers == 0 {
+		targetURL = fmt.Sprintf("http://127.0.0.1:%d/ping", serverPort)
+	}
+
+	fmt.Printf("   → Running hey latency test → %s  (concurrency=%d, requests=%d)\n",
+		targetURL, config.Concurrency, config.NumRequests)
+
+	// === Run hey ===
+	heyArgs := []string{
+		"-n", strconv.Itoa(config.NumRequests),
+		"-c", strconv.Itoa(config.Concurrency),
+		targetURL,
+	}
+
+	cmd := exec.Command("hey", heyArgs...)
+	output, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.txt"), output, 0644)
+
+	if err != nil {
+		fmt.Printf("   Warning: hey had issues: %v\n", err)
+	} else {
+		fmt.Println("   → hey latency test completed successfully")
+	}
+
+	// Graceful shutdown of the echo server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
+		fmt.Printf("   Warning: HTTP server shutdown: %v\n", shutdownErr)
+	}
+	<-serverDone
+
+	fmt.Printf("HTTP latency test completed!\n")
+	return nil
+}

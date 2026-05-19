@@ -21,6 +21,6 @@ func runConfig(skupperVersion, configPath string) error {
 		return runComparison(skupperVersion, config)
 	}
 
-	return runNormalTest(skupperVersion, config, data)
+	return runTest(skupperVersion, config, data)
 }
 
