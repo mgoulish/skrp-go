@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
         "path/filepath"
+	"sort"
         "strconv"
         "strings"
-        "sort"
 	"time"
 )
 
@@ -31,6 +31,10 @@ func writeCommands(config TestConfig, commandsDir string) {
 }
 
 func runComparison(skupperVersion string, config TestConfig) error {
+	if config.TestType == "http-latency" {
+		return runLatencyComparison(skupperVersion, config)
+	}
+
 	if len(config.Tests) == 0 {
 		return fmt.Errorf("comparison needs 'tests' array")
 	}
@@ -102,21 +106,20 @@ print "✅ Comparison plot generated"
 
 func findLatestTestPath(version, testType, dateStr, name string) string {
 	base := filepath.Join("skrp_results", version, testType, dateStr)
-        fp("MDEBUG: base: |%s|\n", base)
+        fp("MDEBUG: FLTP: base: |%s|\n", base)
 	entries, _ := os.ReadDir(base)
-        fp("MDEBUG: entries: %v\n", entries)
+        fp("MDEBUG: FLTP: entries: %v\n", entries)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() > entries[j].Name()
 	})
 
 	for _, e := range entries {
-        fp ( "MDEBUG: entry: |%s|\n", e )
+        fp ( "MDEBUG: FLTP: entry: |%s|\n", e )
                 if name == e.Name() {
-                  fp ( "MDEBUG: that's it.\n")
-                  // HERE
+                  fp ( "MDEBUG: FLTP: that's it.\n")
                   //candidate := filepath.Join(base, e.Name())
                   path  := filepath.Join(base, e.Name())
-                  fp ( "MDEBUG: path: |%s|\n", path )
+                  fp ( "MDEBUG: FLTP: path: |%s|\n", path )
                   return path
                 }
 
@@ -195,6 +198,154 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		_ = exec.Command("display", pngPath).Start()
 		fmt.Println("   → Graph displayed")
+	}
+
+	return nil
+}
+
+// generateHeyCDFData parses the "Latency distribution:" section from hey_output.txt
+// and writes a CDF file: latency_ms   cumulative_percentage
+// generateHeyCDFData parses the "Latency distribution:" section from hey_output.txt
+// and writes a CDF file: latency_ms   cumulative_percentage
+func generateHeyCDFData(txtPath, cdfDataPath string) error {
+	data, err := os.ReadFile(txtPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var latencies []struct{ percent, seconds float64 }
+
+	inDistribution := false
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "Latency distribution:" {
+			inDistribution = true
+			continue
+		}
+		// No longer rely on a blank line (your files don't have one)
+		if inDistribution && strings.Contains(line, " in ") {
+			// Handle "10%% in 0.0002 secs" (or "10% in ...")
+			parts := strings.Split(line, " in ")
+			if len(parts) != 2 {
+				continue
+			}
+
+			// Parse percent (strip trailing % or %%)
+			percentStr := strings.TrimSpace(parts[0])
+			percentStr = strings.TrimSuffix(percentStr, "%%")
+			percentStr = strings.TrimSuffix(percentStr, "%")
+			percent, err1 := strconv.ParseFloat(percentStr, 64)
+
+			// Parse seconds
+			secsStr := strings.TrimSpace(parts[1])
+			secsStr = strings.TrimSuffix(secsStr, " secs")
+			secsStr = strings.TrimSuffix(secsStr, " sec")
+			secs, err2 := strconv.ParseFloat(secsStr, 64)
+
+			if err1 == nil && err2 == nil && percent > 0 && percent <= 100 {
+				latencies = append(latencies, struct{ percent, seconds float64 }{percent, secs})
+			}
+		}
+	}
+
+	if len(latencies) == 0 {
+		return fmt.Errorf("no latency distribution data found in %s", txtPath)
+	}
+
+	// Sort by percentile just in case
+	sort.Slice(latencies, func(i, j int) bool {
+		return latencies[i].percent < latencies[j].percent
+	})
+
+	f, err := os.Create(cdfDataPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	for _, p := range latencies {
+		latencyMs := p.seconds * 1000
+		fmt.Fprintf(f, "%.3f %.3f\n", latencyMs, p.percent)
+	}
+
+	return nil
+}
+
+
+// ====================== LATENCY COMPARISON ======================
+func runLatencyComparison(skupperVersion string, config TestConfig) error {
+	if len(config.Tests) == 0 {
+		return fmt.Errorf("comparison needs 'tests' array with full paths to hey_output.txt files")
+	}
+
+	fmt.Printf("   → Generating latency CDF comparison: %s\n", config.ComparisonName)
+
+	dateStr := time.Now().Format("2006_01_02")
+	compDir := filepath.Join("skrp_results", skupperVersion, "comparison", dateStr, config.ComparisonName)
+	graphicsDir := filepath.Join(compDir, "graphics")
+	dataDir := filepath.Join(compDir, "data")
+	os.MkdirAll(graphicsDir, 0755)
+	os.MkdirAll(dataDir, 0755)
+
+	var plotLines []string
+	colors := []string{"#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"}
+
+	for i, txtFile := range config.Tests {
+		if _, err := os.Stat(txtFile); err != nil {
+			fmt.Printf("   Warning: Could not find %s\n", txtFile)
+			continue
+		}
+
+		cdfData := filepath.Join(dataDir, fmt.Sprintf("test%d.cdf.data", i))
+		if err := generateHeyCDFData(txtFile, cdfData); err != nil {
+			fmt.Printf("   Warning: Failed to generate CDF for %s: %v\n", txtFile, err)
+			continue
+		}
+
+		label := filepath.Base(filepath.Dir(filepath.Dir(txtFile)))
+		color := colors[i%len(colors)]
+		absData, _ := filepath.Abs(cdfData)
+
+		plotLines = append(plotLines, fmt.Sprintf(`'%s' using 1:2 with lines lw 2.5 lc rgb "%s" title "%s"`,
+			absData, color, label))
+	}
+
+	if len(plotLines) == 0 {
+		return fmt.Errorf("no valid latency data files found")
+	}
+
+	plotScript := `set terminal pngcairo size 1200,500 enhanced
+set output 'latency_cdf_comparison.png'
+set title '` + config.Title + `'
+set xlabel 'Latency (milliseconds)'
+set ylabel 'Percentage of requests (%)'
+set logscale x
+set xrange [0.1:200]
+set xtics (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200)
+set yrange [0:100]
+set grid
+set key outside
+
+plot ` + strings.Join(plotLines, ", ") + `
+
+print "Latency CDF comparison generated"
+`
+
+	gpPath := filepath.Join(graphicsDir, "latency_cdf_comparison.gp")
+	_ = os.WriteFile(gpPath, []byte(plotScript), 0644)
+
+	fmt.Println("   → Running gnuplot...")
+	gnuplotCmd := exec.Command("gnuplot", "latency_cdf_comparison.gp")
+	gnuplotCmd.Dir = graphicsDir
+	gnuplotCmd.Run()
+
+	pngPath := filepath.Join(graphicsDir, "latency_cdf_comparison.png")
+	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
+		fmt.Printf("   → Latency CDF comparison graph created (%d KB)\n", info.Size()/1024)
+		_ = exec.Command("display", pngPath).Start()
+	} else {
+		fmt.Println("   Warning: latency_cdf_comparison.png is empty")
 	}
 
 	return nil

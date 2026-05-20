@@ -1,0 +1,8 @@
+{
+  "test_type": "http-latency",
+  "test_name": "http-latency-1-router-cpu-500",
+  "cpu": 500,
+  "routers": 1,
+  "num_requests": 100000,
+  "concurrency": 50
+}
