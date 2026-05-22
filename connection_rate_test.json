@@ -1,0 +1,9 @@
+{
+  "test_type": "connection-rate-500",
+  "test_name": "conn-rate-2-routers",
+  "duration_seconds": 30,
+  "concurrency": 100,
+  "routers": 2,
+  "cpu": 500,
+  "y_max_mbps": 100000
+}

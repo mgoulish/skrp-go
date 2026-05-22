@@ -52,7 +52,6 @@ func runComparison(skupperVersion string, config TestConfig) error {
 	for i, name := range config.Tests {
 		fullPath := findLatestTestPath(skupperVersion, config.TestType, dateStr, name)
 		dataFile := filepath.Join(fullPath, "output/data/iperf3_client_output.data")
-                fp("MDEBUG: looking for datafile at: |%s|\n", dataFile)
 		absData, _ := filepath.Abs(dataFile)
 
 		if _, err := os.Stat(absData); err != nil {
@@ -106,20 +105,15 @@ print "✅ Comparison plot generated"
 
 func findLatestTestPath(version, testType, dateStr, name string) string {
 	base := filepath.Join("skrp_results", version, testType, dateStr)
-        fp("MDEBUG: FLTP: base: |%s|\n", base)
 	entries, _ := os.ReadDir(base)
-        fp("MDEBUG: FLTP: entries: %v\n", entries)
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() > entries[j].Name()
 	})
 
 	for _, e := range entries {
-        fp ( "MDEBUG: FLTP: entry: |%s|\n", e )
                 if name == e.Name() {
-                  fp ( "MDEBUG: FLTP: that's it.\n")
                   //candidate := filepath.Join(base, e.Name())
                   path  := filepath.Join(base, e.Name())
-                  fp ( "MDEBUG: FLTP: path: |%s|\n", path )
                   return path
                 }
 
@@ -141,6 +135,7 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 }
 
 func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
+        fp("MDEBUG: processIperf3Output: config.YMaxMbps == %d \n", config.YMaxMbps)
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
@@ -203,8 +198,6 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 	return nil
 }
 
-// generateHeyCDFData parses the "Latency distribution:" section from hey_output.txt
-// and writes a CDF file: latency_ms   cumulative_percentage
 // generateHeyCDFData parses the "Latency distribution:" section from hey_output.txt
 // and writes a CDF file: latency_ms   cumulative_percentage
 func generateHeyCDFData(txtPath, cdfDataPath string) error {

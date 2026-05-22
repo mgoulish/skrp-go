@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+        "regexp"
 	"strconv"
 	"time"
 )
@@ -28,6 +29,10 @@ func runTest(skupperVersion string, config TestConfig, rawData []byte) error {
 	if config.TestType == "http-latency" {
 		return runHttpLatencyTest(skupperVersion, config, rawData)
 	}
+
+        if config.TestType == "connection-rate" {
+	        return runConnectionRateTest(skupperVersion, config, rawData)
+        }
 	// ================================================
 
 	dateStr := time.Now().Format("2006_01_02")
@@ -247,4 +252,145 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 
 	fmt.Printf("HTTP latency test completed!\n")
 	return nil
+}
+
+// ====================== CONNECTION RATE TEST ======================
+func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []byte) error {
+	if config.TestName == "" {
+		config.TestName = "connection-rate"
+	}
+	if config.Duration == 0 {
+		config.Duration = 30 // seconds
+	}
+	if config.Concurrency == 0 {
+		config.Concurrency = 200 // number of concurrent clients
+	}
+	if config.Routers < 0 {
+		config.Routers = 0
+	}
+
+	dateStr := time.Now().Format("2006_01_02")
+	baseDir := filepath.Join("skrp_results", skupperVersion, "connection-rate", dateStr, config.TestName)
+	outputDir := filepath.Join(baseDir, "output")
+	commandsDir := filepath.Join(baseDir, "commands")
+	dataDir := filepath.Join(outputDir, "data")
+	graphicsDir := filepath.Join(baseDir, "graphics")
+
+	for _, dir := range []string{outputDir, commandsDir, dataDir, graphicsDir} {
+		os.MkdirAll(dir, 0755)
+	}
+
+	// Write metadata (same pattern as latency/throughput)
+	writeCommands(config, commandsDir) // harmless even if it writes iperf scripts
+
+	type RunInfo struct {
+		SkupperVersion string     `json:"skupper_version"`
+		TestConfig     TestConfig `json:"test_config"`
+		RunTime        time.Time  `json:"run_time"`
+	}
+	runInfo := RunInfo{SkupperVersion: skupperVersion, TestConfig: config, RunTime: time.Now()}
+	infoBytes, _ := json.MarshalIndent(runInfo, "", "  ")
+	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
+	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), rawData, 0644)
+
+	// Start routers if requested (exact same logic as latency test)
+	var routerProcs []*os.Process
+	if config.Routers > 0 {
+		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, config.CPU)
+		defer cleanupRouters(routerProcs)
+
+		waitTime := 5 * time.Second
+		if config.Routers >= 2 {
+			waitTime = 10 * time.Second
+		}
+		fmt.Printf("   → Waiting %v for routers to sync...\n", waitTime)
+		time.Sleep(waitTime)
+
+		waitForRouterReady()
+	}
+
+        //--------------------------------------------------------------------
+        	// Start minimal HTTP echo server (reused from latency test)
+	serverPort := 5801
+	if config.Routers == 0 {
+		serverPort = 5800
+	}
+	fmt.Printf("   → Starting minimal HTTP echo server on port %d\n", serverPort)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("OK"))
+	})
+
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", serverPort), Handler: mux}
+	serverDone := make(chan struct{})
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("HTTP server error: %v\n", err)
+		}
+		close(serverDone)
+	}()
+	time.Sleep(800 * time.Millisecond)
+
+	// ... (rest of the function: build targetURL, run hey, etc.) ...
+
+        //--------------------------------------------------------------------
+
+	// Target URL (through router or direct)
+	targetURL := "http://127.0.0.1:5800/ping"
+	if config.Routers == 0 {
+		targetURL = fmt.Sprintf("http://127.0.0.1:%d/ping", serverPort)
+	}
+
+	fmt.Printf("   → Running connection-rate test → %s  (concurrency=%d clients, duration=%ds)\n",
+		targetURL, config.Concurrency, config.Duration)
+
+	// Build hey command for connection rate
+	// -disable-keepalive is critical: every request = new TCP connection
+	heyArgs := []string{
+		"-disable-keepalive",
+		"-z", fmt.Sprintf("%ds", config.Duration),
+		"-c", strconv.Itoa(config.Concurrency),
+		"-m", "GET",
+		targetURL,
+	}
+
+	cmd := exec.Command("hey", heyArgs...)
+	output, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.txt"), output, 0644)
+
+	rate := parseRequestsPerSec(output)
+	fmt.Printf("\n=== Connection Rate ===\n")
+	fmt.Printf("Requests/sec (connection rate): %.2f\n\n", rate)
+
+	if err != nil {
+		fmt.Printf("   Warning: hey had issues: %v\n", err)
+	} else {
+		fmt.Println("   → Connection-rate test completed successfully")
+	}
+
+	// Graceful shutdown of the echo server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if shutdownErr := srv.Shutdown(ctx); shutdownErr != nil {
+		fmt.Printf("   Warning: HTTP server shutdown: %v\n", shutdownErr)
+	}
+	<-serverDone
+
+	fmt.Printf("Connection-rate test completed!\n")
+	return nil
+}
+
+// parseRequestsPerSec extracts the "Requests/sec" value from hey's text summary output.
+func parseRequestsPerSec(output []byte) float64 {
+	re := regexp.MustCompile(`Requests/sec:\s*([0-9.]+)`)
+	matches := re.FindSubmatch(output)
+	if len(matches) > 1 {
+		f, _ := strconv.ParseFloat(string(matches[1]), 64)
+		return f
+	}
+	return 0
 }

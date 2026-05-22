@@ -1,5 +1,9 @@
 #! /bin/bash
 
+./skrp 2.2.0  connection_rate_test.json
+
+
+
 # Latency Test #####################################################
 
 #./skrp  2.2.0 ./test_scripts/latency/0_router.json
@@ -11,7 +15,8 @@
 #./skrp  2.2.0 ./test_scripts/latency/1_router_cpu_300.json
 #./skrp  2.2.0 ./test_scripts/latency/1_router_cpu_400.json
 #./skrp  2.2.0 ./test_scripts/latency/1_router_cpu_500.json
-./skrp  2.2.0 latency-comparison.json
+#./skrp  2.2.0 1-router-latency-comparison-1.json
+#./skrp  2.2.0 1-router-latency-comparison-2.json
 
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_25.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_50.json
@@ -20,6 +25,8 @@
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_300.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_400.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_500.json
+#./skrp  2.2.0 2-router-latency-comparison-1.json
+#./skrp  2.2.0 2-router-latency-comparison-2.json
 
 
 # Throughput #######################################################
