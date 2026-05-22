@@ -1,6 +1,6 @@
 #! /bin/bash
 
-./skrp 2.2.0  connection_rate_test.json
+./skrp 2.2.0  connection_rate_test_1r.json
 
 
 

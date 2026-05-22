@@ -1,0 +1,15 @@
+{
+  "type": "comparison",
+  "test_type": "http-latency",
+  "name": "1-router-latency",
+  "title": "HTTP Request Latency Distribution (hey)",
+  "tests": [
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-25/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-50/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-100/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-200/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-300/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-400/output/hey_output.txt",
+    "./skrp_results/2.2.0/http-latency/2026_05_19/http-latency-1-router-cpu-500/output/hey_output.txt"
+  ]
+}

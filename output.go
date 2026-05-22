@@ -134,8 +134,7 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 	return "NONE"
 }
 
-func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
-        fp("MDEBUG: processIperf3Output: config.YMaxMbps == %d \n", config.YMaxMbps)
+func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
@@ -167,16 +166,22 @@ func processIperf3Output(jsonPath, dataDir, graphicsDir string, config TestConfi
 	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
 	relDataPath := filepath.Join("..", "output", "data", "iperf3_client_output.data")
 
+        // Build yrange directive conditionally
+        yrangeLine := "set yrange [0:]"
+        if config.YMaxMbps != 0 {
+            yrangeLine = "set yrange [0:" + strconv.Itoa(config.YMaxMbps) + "]"
+        }
+
 	plotScript := `set terminal pngcairo size 1200,700 enhanced
 set output 'throughput.png'
 set title '` + cleanTitle + ` (` + strconv.Itoa(config.Parallel) + ` streams, ` + strconv.Itoa(config.Duration) + ` sec) - ` + strconv.Itoa(config.Routers) + ` router(s)'
 set xlabel 'Time (seconds)'
-set ylabel 'Throughput (Mbps)'
-set yrange [0:` + strconv.Itoa(config.YMaxMbps) + `]
+set ylabel '` + config.YLabel + `'
+` + yrangeLine + `
 set grid
 set key outside
 
-plot '` + relDataPath + `' using 0:1 with linespoints lw 2 pt 7 lc rgb "#1f77b4" title 'Throughput'
+plot '` + relDataPath + `' using 0:1 with linespoints lw 2 pt 7 lc rgb "#1f77b4" title '` + config.PlotTitle + `'
 
 stats '` + relDataPath + `' nooutput
 set label sprintf("Average: %.1f Mbps", STATS_mean) at graph 0.02, 0.95

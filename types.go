@@ -13,6 +13,8 @@ type TestConfig struct {
 	Port           int      `json:"port"`
 	Routers        int      `json:"routers"`
 	YMaxMbps       int      `json:"y_max_mbps"`
+        YLabel         string   `json:"y_label"`
+        PlotTitle      string   `json:"plot_title"`
         CPU            int      `json:"cpu"`
 
         // Latency

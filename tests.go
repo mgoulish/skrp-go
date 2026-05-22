@@ -23,7 +23,6 @@ func runTest(skupperVersion string, config TestConfig, rawData []byte) error {
 	if config.Protocol == "" { config.Protocol = "tcp" }
 	if config.Port == 0 { config.Port = 5201 }
 	if config.Routers < 0 { config.Routers = 0 }
-	if config.YMaxMbps <= 0 { config.YMaxMbps = 600000 }
 
 	// === NEW: dispatch to specialized test runners ===
 	if config.TestType == "http-latency" {
@@ -128,7 +127,7 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	serverCmd.Process.Kill()
 	serverCmd.Wait()
 
-	processIperf3Output(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config)
+	processOutput(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config)
 	return nil
 }
 
