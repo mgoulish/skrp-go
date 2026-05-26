@@ -1,6 +1,6 @@
 {
-  "test_type": "connection-rate-500",
-  "test_name": "conn-rate-1-routers",
+  "test_type": "connection-rate",
+  "test_name": "conn-rate-1-router",
   "duration_seconds": 30,
   "concurrency": 100,
   "routers": 1,

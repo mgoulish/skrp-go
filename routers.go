@@ -27,9 +27,9 @@ func waitForRouterReady() {
 func startSkupperRouters(numRouters int, baseDir, commandsDir string, cpu int) ([]*os.Process, error) {
 	var procs []*os.Process
 
-        if cpu != 0 {
-          fp("⚠️  limiting router CPU to %d%% per router.\n", cpu)
-        }
+	if cpu != 0 {
+		fp("⚠️  limiting router CPU to %d%% per router.\n", cpu)
+	}
 
 	cpu_quota_str := fmt.Sprintf("--property=CPUQuota=%d%%", cpu)
 	var cmd, cmdA, cmdB *exec.Cmd

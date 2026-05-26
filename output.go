@@ -1,14 +1,14 @@
 package main
 
 import (
-        "encoding/json"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-        "path/filepath"
+	"path/filepath"
 	"sort"
-        "strconv"
-        "strings"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -111,32 +111,32 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 	})
 
 	for _, e := range entries {
-                if name == e.Name() {
-                  //candidate := filepath.Join(base, e.Name())
-                  path  := filepath.Join(base, e.Name())
-                  return path
-                }
-
-                /*
-                if strings.Contains(e.Name(), name) || strings.Contains(e.Name(), strings.TrimSuffix(name, "_routers")) {
-
-			candidate := filepath.Join(base, e.Name(), name)
-			if _, err := os.Stat(filepath.Join(candidate, "output/data/iperf3_client_output.data")); err == nil {
-				return candidate
-			}
-			// Try without trailing _routers
-			if _, err := os.Stat(filepath.Join(base, e.Name(), "output/data/iperf3_client_output.data")); err == nil {
-				return filepath.Join(base, e.Name())
-			}
+		if name == e.Name() {
+			//candidate := filepath.Join(base, e.Name())
+			path := filepath.Join(base, e.Name())
+			return path
 		}
-                */
+
+		/*
+			                if strings.Contains(e.Name(), name) || strings.Contains(e.Name(), strings.TrimSuffix(name, "_routers")) {
+
+						candidate := filepath.Join(base, e.Name(), name)
+						if _, err := os.Stat(filepath.Join(candidate, "output/data/iperf3_client_output.data")); err == nil {
+							return candidate
+						}
+						// Try without trailing _routers
+						if _, err := os.Stat(filepath.Join(base, e.Name(), "output/data/iperf3_client_output.data")); err == nil {
+							return filepath.Join(base, e.Name())
+						}
+					}
+		*/
 	}
 	return "NONE"
 }
 
 func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
-        fp("processing output...\n")
-        WhoCalledMe()
+	fp("processing output...\n")
+	WhoCalledMe()
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
@@ -168,11 +168,11 @@ func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) err
 	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
 	relDataPath := filepath.Join("..", "output", "data", "iperf3_client_output.data")
 
-        // Build yrange directive conditionally
-        yrangeLine := "set yrange [0:]"
-        if config.YMaxMbps != 0 {
-            yrangeLine = "set yrange [0:" + strconv.Itoa(config.YMaxMbps) + "]"
-        }
+	// Build yrange directive conditionally
+	yrangeLine := "set yrange [0:]"
+	if config.YMaxMbps != 0 {
+		yrangeLine = "set yrange [0:" + strconv.Itoa(config.YMaxMbps) + "]"
+	}
 
 	plotScript := `set terminal pngcairo size 1200,700 enhanced
 set output 'throughput.png'
@@ -195,9 +195,9 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 	gnuplotCmd := exec.Command("gnuplot", "throughput_plot.gp")
 	gnuplotCmd.Dir = graphicsDir
 	//gnuplotCmd.Run()
-        output, err := gnuplotCmd.CombinedOutput()
+	output, err := gnuplotCmd.CombinedOutput()
 
-        	if err != nil {
+	if err != nil {
 		// Output is still populated even if the command returns an error exit code
 		fmt.Printf("Command finished with error: %v\n", err)
 	}
@@ -205,14 +205,13 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 	// Convert the byte slice to a string and print it
 	fmt.Printf("Gnuplot Output:\n%s\n", string(output))
 
-
 	pngPath := filepath.Join(graphicsDir, "throughput.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		_ = exec.Command("display", pngPath).Start()
 		fmt.Println("   → Graph displayed")
 	} else {
-          fp("Gnuplot did not produce a graphic.\n")
-        }
+		fp("Gnuplot did not produce a graphic.\n")
+	}
 
 	return nil
 }
@@ -283,7 +282,6 @@ func generateHeyCDFData(txtPath, cdfDataPath string) error {
 
 	return nil
 }
-
 
 // ====================== LATENCY COMPARISON ======================
 func runLatencyComparison(skupperVersion string, config TestConfig) error {

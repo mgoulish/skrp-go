@@ -22,7 +22,7 @@ func main() {
 
 	for i, configPath := range configFiles {
 		fmt.Printf("=== Test %d/%d : %s ===\n", i+1, len(configFiles), configPath)
-		if err := runConfig(skupperVersion, configPath); err != nil {
+		if err := runTestConfig(skupperVersion, configPath); err != nil {
 			fmt.Printf("❌ Failed: %v\n", err)
 		}
 		if i < len(configFiles)-1 {
@@ -30,4 +30,3 @@ func main() {
 		}
 	}
 }
-

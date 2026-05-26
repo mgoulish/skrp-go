@@ -1,42 +1,44 @@
 package main
 
 import (
-        "context"
+	"context"
 	"encoding/json"
 	"fmt"
-        "net/http"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-        "regexp"
-        "runtime"
+	"regexp"
+	"runtime"
 	"strconv"
 	"time"
 )
 
-
-// ====================== RUN TEST ======================
-func runTest(skupperVersion string, config TestConfig, rawData []byte) error {
-	if config.TestType == "" { config.TestType = "throughput" }
-	if config.TestName == "" { config.TestName = "unnamed_test" }
-	if config.Duration == 0 { config.Duration = 10 }
-	if config.Parallel == 0 { config.Parallel = 1 }
-	if config.Protocol == "" { config.Protocol = "tcp" }
-	if config.Port == 0 { config.Port = 5201 }
-	if config.Routers < 0 { config.Routers = 0 }
-
-	// === NEW: dispatch to specialized test runners ===
-	if config.TestType == "latency" {
-                fp("runTest: running latency test\n")
-		return runHttpLatencyTest(skupperVersion, config, rawData)
+// ====================== RUN THROUGHPUT TEST ======================
+func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte) error {
+	if config.TestType == "" {
+		config.TestType = "throughput"
+	}
+	if config.TestName == "" {
+		config.TestName = "unnamed_test"
+	}
+	if config.Duration == 0 {
+		config.Duration = 10
+	}
+	if config.Parallel == 0 {
+		config.Parallel = 1
+	}
+	if config.Protocol == "" {
+		config.Protocol = "tcp"
+	}
+	if config.Port == 0 {
+		config.Port = 5201
+	}
+	if config.Routers < 0 {
+		config.Routers = 0
 	}
 
-        if config.TestType == "connection-rate" {
-                fp("runTest: running connection rate test\n")
-	        return runConnectionRateTest(skupperVersion, config, rawData)
-        }
-	// ================================================
-        fp ( "runTest: running throughput test\n" )
+	fp("runTest: running throughput test\n")
 
 	dateStr := time.Now().Format("2006_01_02")
 	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
@@ -313,8 +315,8 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		waitForRouterReady()
 	}
 
-        //--------------------------------------------------------------------
-        	// Start minimal HTTP echo server (reused from latency test)
+	//--------------------------------------------------------------------
+	// Start minimal HTTP echo server (reused from latency test)
 	serverPort := 5801
 	if config.Routers == 0 {
 		serverPort = 5800
@@ -340,7 +342,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 
 	// ... (rest of the function: build targetURL, run hey, etc.) ...
 
-        //--------------------------------------------------------------------
+	//--------------------------------------------------------------------
 
 	// Target URL (through router or direct)
 	targetURL := "http://127.0.0.1:5800/ping"
@@ -398,12 +400,11 @@ func parseRequestsPerSec(output []byte) float64 {
 	return 0
 }
 
-
 func WhoCalledMe() {
 	// skip = 0: returns information about WhoCalledMe itself
 	// skip = 1: returns information about the function that called WhoCalledMe
 	// skip = 2: returns the caller of the caller, etc.
-	pc, file, line, ok := runtime.Caller(2) 
+	pc, file, line, ok := runtime.Caller(2)
 
 	if !ok {
 		fmt.Println("Could not recover caller information")
