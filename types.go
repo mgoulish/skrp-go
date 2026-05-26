@@ -1,6 +1,20 @@
 package main
 
 
+var ValidTestTypes = map[string]struct{}{
+    "throughput" : {},
+    "latency" : {},
+    "connection-rate" : {},
+}
+
+
+func IsValidTestType(testType string) bool {
+	_, ok := ValidTestTypes[testType]
+	return ok
+}
+
+
+
 
 // types
 type TestConfig struct {

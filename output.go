@@ -135,6 +135,8 @@ func findLatestTestPath(version, testType, dateStr, name string) string {
 }
 
 func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
+        fp("processing output...\n")
+        WhoCalledMe()
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
@@ -192,13 +194,25 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 
 	gnuplotCmd := exec.Command("gnuplot", "throughput_plot.gp")
 	gnuplotCmd.Dir = graphicsDir
-	gnuplotCmd.Run()
+	//gnuplotCmd.Run()
+        output, err := gnuplotCmd.CombinedOutput()
+
+        	if err != nil {
+		// Output is still populated even if the command returns an error exit code
+		fmt.Printf("Command finished with error: %v\n", err)
+	}
+
+	// Convert the byte slice to a string and print it
+	fmt.Printf("Gnuplot Output:\n%s\n", string(output))
+
 
 	pngPath := filepath.Join(graphicsDir, "throughput.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		_ = exec.Command("display", pngPath).Start()
 		fmt.Println("   → Graph displayed")
-	}
+	} else {
+          fp("Gnuplot did not produce a graphic.\n")
+        }
 
 	return nil
 }

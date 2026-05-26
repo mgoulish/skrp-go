@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
         "regexp"
+        "runtime"
 	"strconv"
 	"time"
 )
@@ -25,14 +26,17 @@ func runTest(skupperVersion string, config TestConfig, rawData []byte) error {
 	if config.Routers < 0 { config.Routers = 0 }
 
 	// === NEW: dispatch to specialized test runners ===
-	if config.TestType == "http-latency" {
+	if config.TestType == "latency" {
+                fp("runTest: running latency test\n")
 		return runHttpLatencyTest(skupperVersion, config, rawData)
 	}
 
         if config.TestType == "connection-rate" {
+                fp("runTest: running connection rate test\n")
 	        return runConnectionRateTest(skupperVersion, config, rawData)
         }
 	// ================================================
+        fp ( "runTest: running throughput test\n" )
 
 	dateStr := time.Now().Format("2006_01_02")
 	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
@@ -392,4 +396,23 @@ func parseRequestsPerSec(output []byte) float64 {
 		return f
 	}
 	return 0
+}
+
+
+func WhoCalledMe() {
+	// skip = 0: returns information about WhoCalledMe itself
+	// skip = 1: returns information about the function that called WhoCalledMe
+	// skip = 2: returns the caller of the caller, etc.
+	pc, file, line, ok := runtime.Caller(2) 
+
+	if !ok {
+		fmt.Println("Could not recover caller information")
+		return
+	}
+
+	// Use the Program Counter (pc) to get the function object
+	callerFunction := runtime.FuncForPC(pc)
+
+	fmt.Printf("Called by: %s\n", callerFunction.Name())
+	fmt.Printf("Found in:  %s (Line: %d)\n\n", file, line)
 }
