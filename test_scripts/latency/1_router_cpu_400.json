@@ -3,6 +3,6 @@
   "test_name": "latency-1-router-cpu-400",
   "cpu": 400,
   "routers": 1,
-  "num_requests": 1000000,
+  "num_requests": 100000,
   "concurrency": 50
 }

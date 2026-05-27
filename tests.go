@@ -230,13 +230,16 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 	fmt.Printf("   → Running hey latency test → %s  (concurrency=%d, requests=%d)\n",
 		targetURL, config.Concurrency, config.NumRequests)
 
-	// === Run hey ===
+	//==========================================
+	fmt.Printf("   → Running hey latency test → %s  (concurrency=%d, requests=%d)\n",
+		targetURL, config.Concurrency, config.NumRequests)
+
+	// Normal text output (kept for summary + latency distribution parsing)
 	heyArgs := []string{
 		"-n", strconv.Itoa(config.NumRequests),
 		"-c", strconv.Itoa(config.Concurrency),
 		targetURL,
 	}
-
 	cmd := exec.Command("hey", heyArgs...)
 	output, err := cmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.txt"), output, 0644)
@@ -247,6 +250,21 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 		fmt.Println("   → hey latency test completed successfully")
 	}
 
+	// === Run hey ===
+	// Extra CSV run for per-request latency time-series (very fast, same load)
+	fmt.Printf("   → Running hey again for CSV data \n")
+	heyArgsCSV := []string{
+		"-n", strconv.Itoa(config.NumRequests),
+		"-c", strconv.Itoa(config.Concurrency),
+		"-o", "csv",
+		targetURL,
+	}
+	cmdCSV := exec.Command("hey", heyArgsCSV...)
+	csvOutput, _ := cmdCSV.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.csv"), csvOutput, 0644)
+
+	fmt.Println("   → CSV data for graphing saved")
+
 	// Graceful shutdown of the echo server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -256,6 +274,12 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 	<-serverDone
 
 	fmt.Printf("HTTP latency test completed!\n")
+	//---------------------------------------------------------
+	// Generate the time-sequence latency graph (new!)
+	if err := processHttpLatencyOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config); err != nil {
+		fmt.Printf("   Warning: Could not create latency time-sequence graph: %v\n", err)
+	}
+	//---------------------------------------------------------
 	return nil
 }
 

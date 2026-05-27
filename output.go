@@ -105,7 +105,6 @@ print "Comparison plot generated"
 	return nil
 }
 
-
 func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
 	fp("processing output...\n")
 	WhoCalledMe()
@@ -328,6 +327,101 @@ print "Latency CDF comparison generated"
 		_ = exec.Command("display", pngPath).Start()
 	} else {
 		fmt.Println("   Warning: latency_cdf_comparison.png is empty")
+	}
+
+	return nil
+}
+
+// processHttpLatencyOutput creates a clean time-sequence graph showing ONLY the simple moving average.
+// No individual request points — just the smooth trend line.
+func processHttpLatencyOutput(csvPath, dataDir, graphicsDir string, config TestConfig) error {
+	fp("processing hey latency output for moving-average graph...\n")
+
+	if _, err := os.Stat(csvPath); os.IsNotExist(err) {
+		return fmt.Errorf("hey_output.csv not found")
+	}
+
+	data, err := os.ReadFile(csvPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var latencies []float64
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i == 0 || line == "" {
+			continue
+		}
+		fields := strings.Split(line, ",")
+		if len(fields) > 0 {
+			if respTimeSec, parseErr := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64); parseErr == nil {
+				latencies = append(latencies, respTimeSec*1000) // convert to ms
+			}
+		}
+	}
+
+	if len(latencies) == 0 {
+		return fmt.Errorf("no valid latency data found in CSV")
+	}
+
+	// === Simple moving average (change this number if you want more/less smoothing) ===
+	const movingAvgWindow = 30
+
+	var ma []float64
+	for i := range latencies {
+		if i < movingAvgWindow-1 {
+			ma = append(ma, 0) // placeholder until we have enough points
+			continue
+		}
+		sum := 0.0
+		for j := 0; j < movingAvgWindow; j++ {
+			sum += latencies[i-j]
+		}
+		ma = append(ma, sum/float64(movingAvgWindow))
+	}
+
+	// Write data file: request_number, moving_average (starts after first window)
+	dataPath := filepath.Join(dataDir, "latency_time_series.data")
+	f, _ := os.Create(dataPath)
+	for i := movingAvgWindow - 1; i < len(ma); i++ {
+		fmt.Fprintf(f, "%d %.3f\n", i+1, ma[i])
+	}
+	f.Close()
+
+	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
+	relDataPath := filepath.Join("..", "output", "data", "latency_time_series.data")
+
+	plotScript := `set terminal pngcairo size 1400,700 enhanced
+set output 'latency_time_series.png'
+set title '` + cleanTitle + ` - Latency Moving Average (` + strconv.Itoa(config.Concurrency) + ` concurrent)'
+set xlabel 'Request Number'
+set ylabel 'Latency (ms)'
+set grid
+set key outside
+
+plot '` + relDataPath + `' using 1:2 with lines lw 3.5 lc rgb "#ff7f0e" title 'Simple moving average (window=` + strconv.Itoa(movingAvgWindow) + `)'
+
+stats '` + relDataPath + `' using 2 nooutput
+set label sprintf("Overall Avg: %.1f ms", STATS_mean) at graph 0.02, 0.95
+set label sprintf("Min: %.1f ms", STATS_min) at graph 0.02, 0.90
+set label sprintf("Max: %.1f ms", STATS_max) at graph 0.02, 0.85
+`
+
+	_ = os.WriteFile(filepath.Join(graphicsDir, "latency_plot.gp"), []byte(plotScript), 0644)
+
+	fmt.Println("   → Running gnuplot for latency moving-average graph...")
+	gnuplotCmd := exec.Command("gnuplot", "latency_plot.gp")
+	gnuplotCmd.Dir = graphicsDir
+	gnuplotCmd.Run()
+
+	pngPath := filepath.Join(graphicsDir, "latency_time_series.png")
+	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
+		fmt.Printf("   → Latency moving-average graph created (%d KB)\n", info.Size()/1024)
+		_ = exec.Command("display", pngPath).Start()
+	} else {
+		fmt.Println("   Warning: latency_time_series.png was not created")
 	}
 
 	return nil
