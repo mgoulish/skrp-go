@@ -426,3 +426,124 @@ set label sprintf("Max: %.1f ms", STATS_max) at graph 0.02, 0.85
 
 	return nil
 }
+
+// processConnectionRateOutput creates a clean moving-average graph of achieved connection rate (conn/s).
+// Downsampled so the line stays thin and readable even with long tests.
+// processConnectionRateOutput creates a clean moving-average graph of achieved connection rate (conn/s).
+// Downsampled so the line stays thin and readable even with long tests.
+func processConnectionRateOutput(csvPath, dataDir, graphicsDir string, config TestConfig) error {
+	fp("processing hey connection-rate output for moving-average graph...\n")
+
+	if _, err := os.Stat(csvPath); os.IsNotExist(err) {
+		return fmt.Errorf("hey_output.csv not found")
+	}
+
+	data, err := os.ReadFile(csvPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var latencies []float64
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if i == 0 || line == "" {
+			continue
+		}
+		fields := strings.Split(line, ",")
+		if len(fields) > 0 {
+			// hey CSV format: column 0 = response time in seconds
+			if respTimeSec, parseErr := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64); parseErr == nil {
+				latencies = append(latencies, respTimeSec*1000) // convert seconds → milliseconds
+			}
+		}
+	}
+
+	if len(latencies) == 0 {
+		return fmt.Errorf("no valid latency data found in CSV")
+	}
+
+	// === Step 1: Simple moving average of the raw per-connection latencies ===
+	// Raw latencies are extremely noisy due to network jitter.
+	// We smooth them with a 30-point window so the trend becomes visible.
+	const movingAvgWindow = 30
+
+	var maLatency []float64
+	for i := range latencies {
+		if i < movingAvgWindow-1 {
+			maLatency = append(maLatency, 0) // placeholder until we have enough prior points
+			continue
+		}
+		sum := 0.0
+		for j := 0; j < movingAvgWindow; j++ {
+			sum += latencies[i-j]
+		}
+		maLatency = append(maLatency, sum/float64(movingAvgWindow))
+	}
+
+	// === Step 2: Convert moving-average latency into connection rate ===
+	// In a connection-rate test (-disable-keepalive + -z duration + -c concurrency),
+	// each "request" is a brand-new TCP connection.
+	// The instantaneous rate is approximately:
+	//     rate (conn/s) = concurrency / average_connection_time_in_seconds
+	// We use the smoothed latency as the denominator.
+	var maRate []float64
+	for _, latMs := range maLatency {
+		if latMs == 0 {
+			maRate = append(maRate, 0)
+			continue
+		}
+		rate := float64(config.Concurrency) / (latMs / 1000.0)
+		maRate = append(maRate, rate)
+	}
+
+	// === Step 3: Downsample the data so the plot line stays thin ===
+	// Long tests produce tens of thousands of points. Plotting every point
+	// makes the line look like a solid orange block. We keep only every Nth point.
+	const downsampleFactor = 2000
+
+	// Write data file: request_number, moving_average_rate (downsampled)
+	dataPath := filepath.Join(dataDir, "connection_rate_time_series.data")
+	f, _ := os.Create(dataPath)
+	for i := movingAvgWindow - 1; i < len(maRate); i += downsampleFactor {
+		fmt.Fprintf(f, "%d %.2f\n", i+1, maRate[i])
+	}
+	f.Close()
+
+	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
+	relDataPath := filepath.Join("..", "output", "data", "connection_rate_time_series.data")
+
+	plotScript := `set terminal pngcairo size 1400,700 enhanced
+set output 'connection_rate_time_series.png'
+set title '` + cleanTitle + ` - Connection Rate Moving Average (` + strconv.Itoa(config.Concurrency) + ` concurrent)'
+set xlabel 'Connection Number'
+set ylabel 'Connection Rate (conn/s)'
+set grid
+set key outside
+
+plot '` + relDataPath + `' using 1:2 with lines lw 3.0 lc rgb "#ff7f0e" title 'Moving average rate (window=` + strconv.Itoa(movingAvgWindow) + `, every ` + strconv.Itoa(downsampleFactor) + `)'
+
+stats '` + relDataPath + `' using 2 nooutput
+set label sprintf("Overall Avg: %.1f conn/s", STATS_mean) at graph 0.02, 0.95
+set label sprintf("Min: %.1f conn/s", STATS_min) at graph 0.02, 0.90
+set label sprintf("Max: %.1f conn/s", STATS_max) at graph 0.02, 0.85
+`
+
+	_ = os.WriteFile(filepath.Join(graphicsDir, "connection_rate_plot.gp"), []byte(plotScript), 0644)
+
+	fmt.Println("   → Running gnuplot for connection-rate graph...")
+	gnuplotCmd := exec.Command("gnuplot", "connection_rate_plot.gp")
+	gnuplotCmd.Dir = graphicsDir
+	gnuplotCmd.Run()
+
+	pngPath := filepath.Join(graphicsDir, "connection_rate_time_series.png")
+	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
+		fmt.Printf("   → Connection-rate moving-average graph created (%d KB)\n", info.Size()/1024)
+		_ = exec.Command("display", pngPath).Start()
+	} else {
+		fmt.Println("   Warning: connection_rate_time_series.png was not created")
+	}
+
+	return nil
+}

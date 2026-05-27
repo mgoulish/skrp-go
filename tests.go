@@ -364,10 +364,6 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 	}()
 	time.Sleep(800 * time.Millisecond)
 
-	// ... (rest of the function: build targetURL, run hey, etc.) ...
-
-	//--------------------------------------------------------------------
-
 	// Target URL (through router or direct)
 	targetURL := "http://127.0.0.1:5800/ping"
 	if config.Routers == 0 {
@@ -379,6 +375,12 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 
 	// Build hey command for connection rate
 	// -disable-keepalive is critical: every request = new TCP connection
+
+	//--------------------------------------------------------------------
+	fmt.Printf("   → Running connection-rate test → %s  (concurrency=%d clients, duration=%ds)\n",
+		targetURL, config.Concurrency, config.Duration)
+
+	// Normal text output (kept for summary + parseRequestsPerSec)
 	heyArgs := []string{
 		"-disable-keepalive",
 		"-z", fmt.Sprintf("%ds", config.Duration),
@@ -386,7 +388,6 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		"-m", "GET",
 		targetURL,
 	}
-
 	cmd := exec.Command("hey", heyArgs...)
 	output, err := cmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.txt"), output, 0644)
@@ -399,6 +400,26 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		fmt.Printf("   Warning: hey had issues: %v\n", err)
 	} else {
 		fmt.Println("   → Connection-rate test completed successfully")
+	}
+
+	// Extra CSV run for moving-average connection-rate graph (flags BEFORE URL!)
+	heyArgsCSV := []string{
+		"-disable-keepalive",
+		"-z", fmt.Sprintf("%ds", config.Duration),
+		"-c", strconv.Itoa(config.Concurrency),
+		"-m", "GET",
+		"-o", "csv",
+		targetURL,
+	}
+	cmdCSV := exec.Command("hey", heyArgsCSV...)
+	csvOutput, _ := cmdCSV.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.csv"), csvOutput, 0644)
+
+	fmt.Println("   → CSV data for graphing saved")
+
+	// NEW: Generate the moving-average connection rate graph
+	if err := processConnectionRateOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config); err != nil {
+		fmt.Printf("   Warning: Could not create connection-rate moving-average graph: %v\n", err)
 	}
 
 	// Graceful shutdown of the echo server
