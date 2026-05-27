@@ -1,6 +1,6 @@
 #! /bin/bash
 
-#./skrp 2.2.0  connection_rate_test_1r.json
+./skrp 2.2.0  connection_rate_test_1r.json  ./test_scripts/latency/2_router_cpu_25.json  ./test_scripts/1_router_cpu_400.json
 
 #./skrp 2.2.0 ./test_scripts/test_compare_1_router.json
 
@@ -19,7 +19,7 @@
 #./skrp  2.2.0 1-router-latency-comparison-1.json
 #./skrp  2.2.0 1-router-latency-comparison-2.json
 
-./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_25.json
+#./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_25.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_50.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_100.json
 #./skrp  2.2.0 ./test_scripts/latency/2_router_cpu_200.json

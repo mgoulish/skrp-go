@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+// writeCommands creates a small set of shell scripts in the test's commands/ directory
+// so you can manually reproduce the exact client (and server) commands later.
+// Only the commands relevant to this test type are written.
+
+// writeCommands creates a small set of shell scripts + supporting files in the test's
+// commands/ directory so you can manually reproduce the exact test later.
+// - throughput tests get iperf3_server.sh + iperf3_client.sh
+// - latency & connection-rate tests get http_server.py + http_server.sh + hey_client.sh
 func writeCommands(config TestConfig, commandsDir string) {
 	serverPort := config.Port
 	clientPort := config.Port
@@ -20,18 +28,69 @@ func writeCommands(config TestConfig, commandsDir string) {
 		clientPort = 5800
 	}
 
-	serverCmd := fmt.Sprintf("#!/bin/bash\niperf3 -s -p %d -1\n", serverPort)
-	clientCmd := fmt.Sprintf("#!/bin/bash\niperf3 -c 127.0.0.1 -p %d -t %d -P %d -f m -J\n",
-		clientPort, config.Duration, config.Parallel)
+	if config.TestType == "throughput" {
+		// iperf3 commands (unchanged)
+		serverCmd := fmt.Sprintf("#!/bin/bash\niperf3 -s -p %d -1\n", serverPort)
+		clientCmd := fmt.Sprintf("#!/bin/bash\niperf3 -c 127.0.0.1 -p %d -t %d -P %d -f m -J\n",
+			clientPort, config.Duration, config.Parallel)
 
-	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_server.sh"), []byte(serverCmd), 0755)
-	_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_client.sh"), []byte(clientCmd), 0755)
+		_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_server.sh"), []byte(serverCmd), 0755)
+		_ = os.WriteFile(filepath.Join(commandsDir, "iperf3_client.sh"), []byte(clientCmd), 0755)
 
-	fmt.Println("   → Commands written to commands/ directory")
+		fmt.Println("   → iperf3 commands written to commands/ directory")
+
+	} else if config.TestType == "latency" || config.TestType == "connection-rate" {
+		// === HTTP echo server (Python - portable, no extra dependencies) ===
+		httpServerPy := `#!/usr/bin/env python3
+import http.server
+import socketserver
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, format, *args):
+        pass  # keep output clean
+
+if __name__ == "__main__":
+    port = ` + strconv.Itoa(serverPort) + `
+    with socketserver.TCPServer(("", port), Handler) as httpd:
+        print(f"HTTP echo server listening on port {port} (responds with 'OK')")
+        httpd.serve_forever()
+`
+
+		_ = os.WriteFile(filepath.Join(commandsDir, "http_server.py"), []byte(httpServerPy), 0644)
+
+		// Shell wrapper so you can just run ./http_server.sh
+		serverSh := `#!/bin/bash
+python3 http_server.py
+`
+		_ = os.WriteFile(filepath.Join(commandsDir, "http_server.sh"), []byte(serverSh), 0755)
+
+		// === hey client command ===
+		targetURL := fmt.Sprintf("http://127.0.0.1:%d/", clientPort)
+		var clientCmd string
+		if config.TestType == "latency" {
+			clientCmd = fmt.Sprintf("#!/bin/bash\nhey -n %d -c %d %s\n",
+				config.NumRequests, config.Concurrency, targetURL)
+		} else { // connection-rate
+			clientCmd = fmt.Sprintf("#!/bin/bash\nhey -disable-keepalive -z %ds -c %d -m GET %s\n",
+				config.Duration, config.Concurrency, targetURL)
+		}
+
+		_ = os.WriteFile(filepath.Join(commandsDir, "hey_client.sh"), []byte(clientCmd), 0755)
+
+		fmt.Println("   → HTTP server + hey client commands written to commands/ directory")
+	}
+
+	// Router configs are already written by routers.go (router*.conf)
 }
 
+
+
 func runComparison(skupperVersion string, config TestConfig) error {
-	if config.TestType == "http-latency" {
+	if config.TestType == "latency" {
 		return runLatencyComparison(skupperVersion, config)
 	}
 

@@ -141,10 +141,10 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte) error {
 	// === Own defaults (duplicated style from runNormalTest) ===
 	if config.TestType == "" {
-		config.TestType = "http-latency"
+		config.TestType = "latency"
 	}
 	if config.TestName == "" {
-		config.TestName = "http-latency"
+		config.TestName = "latency"
 	}
 	if config.NumRequests == 0 {
 		config.NumRequests = 10000
