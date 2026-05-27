@@ -1,7 +1,8 @@
 #! /bin/bash
 
-./skrp 2.2.0  connection_rate_test_1r.json
+#./skrp 2.2.0  connection_rate_test_1r.json
 
+./skrp 2.2.0 ./test_scripts/test_compare_1_router.json
 
 
 # Latency Test #####################################################
@@ -32,6 +33,8 @@
 # Throughput #######################################################
 
 # The 1-router test  =========================================
+#./skrp  2.2.0  ./test_scripts/1_router_cpu_25.json   ./test_scripts/1_router_cpu_50.json  ./test_scripts/1_router_cpu_100.json
+#./skrp  2.2.0  ./test_scripts/1_router_cpu_50.json   
 #./skrp  2.2.0  ./test_scripts/1_router_cpu_100.json   
 #./skrp  2.2.0  ./test_scripts/1_router_cpu_200.json   
 #./skrp  2.2.0  ./test_scripts/1_router_cpu_300.json   

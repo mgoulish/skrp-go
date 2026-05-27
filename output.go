@@ -36,7 +36,7 @@ func runComparison(skupperVersion string, config TestConfig) error {
 	}
 
 	if len(config.Tests) == 0 {
-		return fmt.Errorf("comparison needs 'tests' array")
+		return fmt.Errorf("comparison needs 'tests' array with full paths to iperf3_client_output.data files")
 	}
 
 	fmt.Printf("   → Generating comparison: %s\n", config.ComparisonName)
@@ -49,17 +49,19 @@ func runComparison(skupperVersion string, config TestConfig) error {
 	var plotLines []string
 	colors := []string{"#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"}
 
-	for i, name := range config.Tests {
-		fullPath := findLatestTestPath(skupperVersion, config.TestType, dateStr, name)
-		dataFile := filepath.Join(fullPath, "output/data/iperf3_client_output.data")
+	for i, dataFile := range config.Tests {
 		absData, _ := filepath.Abs(dataFile)
-
 		if _, err := os.Stat(absData); err != nil {
-			fmt.Printf("   Warning: Could not find data for '%s'\n", name)
+			fmt.Printf("   Warning: Could not find data file '%s'\n", dataFile)
 			continue
 		}
 
+		// Derive a nice label from the directory structure
+		// (assumes: .../<testname>/output/data/iperf3_client_output.data)
+		testNameDir := filepath.Dir(filepath.Dir(filepath.Dir(absData)))
+		name := filepath.Base(testNameDir)
 		label := strings.TrimSuffix(name, "_routers") + " routers"
+
 		color := colors[i%len(colors)]
 
 		plotLines = append(plotLines, fmt.Sprintf(`'%s' using 0:1 with linespoints lw 2.5 pt 7 lc rgb "%s" title "%s"`,
@@ -81,7 +83,7 @@ set key outside
 
 plot ` + strings.Join(plotLines, ", ") + `
 
-print "✅ Comparison plot generated"
+print "Comparison plot generated"
 `
 
 	gpPath := filepath.Join(graphicsDir, "comparison_plot.gp")
@@ -103,36 +105,6 @@ print "✅ Comparison plot generated"
 	return nil
 }
 
-func findLatestTestPath(version, testType, dateStr, name string) string {
-	base := filepath.Join("skrp_results", version, testType, dateStr)
-	entries, _ := os.ReadDir(base)
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() > entries[j].Name()
-	})
-
-	for _, e := range entries {
-		if name == e.Name() {
-			//candidate := filepath.Join(base, e.Name())
-			path := filepath.Join(base, e.Name())
-			return path
-		}
-
-		/*
-			                if strings.Contains(e.Name(), name) || strings.Contains(e.Name(), strings.TrimSuffix(name, "_routers")) {
-
-						candidate := filepath.Join(base, e.Name(), name)
-						if _, err := os.Stat(filepath.Join(candidate, "output/data/iperf3_client_output.data")); err == nil {
-							return candidate
-						}
-						// Try without trailing _routers
-						if _, err := os.Stat(filepath.Join(base, e.Name(), "output/data/iperf3_client_output.data")); err == nil {
-							return filepath.Join(base, e.Name())
-						}
-					}
-		*/
-	}
-	return "NONE"
-}
 
 func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
 	fp("processing output...\n")
