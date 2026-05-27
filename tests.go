@@ -69,7 +69,7 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte)
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
 		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
-		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, config.CPU)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, outputDir, config.CPU)
 		defer cleanupRouters(routerProcs)
 
 		waitTime := 5 * time.Second
@@ -184,7 +184,7 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
 		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
-		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, config.CPU)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, outputDir, config.CPU)
 		defer cleanupRouters(routerProcs)
 
 		waitTime := 5 * time.Second
@@ -326,7 +326,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
 		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
-		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, config.CPU)
+		routerProcs, _ = startSkupperRouters(config.Routers, baseDir, commandsDir, outputDir, config.CPU)
 		defer cleanupRouters(routerProcs)
 
 		waitTime := 5 * time.Second
