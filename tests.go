@@ -15,7 +15,7 @@ import (
 )
 
 // ====================== RUN THROUGHPUT TEST ======================
-func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte) error {
+func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte, showGraphs bool) error {
 	if config.TestType == "" {
 		config.TestType = "throughput"
 	}
@@ -84,7 +84,7 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte)
 
 	fmt.Printf("   → Running iperf3 test with %d router(s)\n", config.Routers)
 
-	if err := runIperf3Test(config, outputDir, dataDir, graphicsDir, commandsDir); err != nil {
+	if err := runIperf3Test(config, outputDir, dataDir, graphicsDir, commandsDir, showGraphs); err != nil {
 		fmt.Printf("   Warning: iperf3 had issues: %v\n", err)
 	}
 
@@ -92,7 +92,7 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte)
 	return nil
 }
 
-func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsDir string) error {
+func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsDir string, showGraphs bool) error {
 	serverPort := config.Port
 	clientPort := config.Port
 	if config.Routers >= 1 {
@@ -133,12 +133,12 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	serverCmd.Process.Kill()
 	serverCmd.Wait()
 
-	processOutput(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config)
+	processOutput(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config, showGraphs)
 	return nil
 }
 
 // ====================== HTTP LATENCY TEST ======================
-func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte) error {
+func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte, showGraphs bool) error {
 	// === Own defaults (duplicated style from runNormalTest) ===
 	if config.TestType == "" {
 		config.TestType = "latency"
@@ -274,17 +274,16 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 	<-serverDone
 
 	fmt.Printf("HTTP latency test completed!\n")
-	//---------------------------------------------------------
-	// Generate the time-sequence latency graph (new!)
-	if err := processHttpLatencyOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config); err != nil {
+
+	// Generate the time-sequence latency graph
+	if err := processHttpLatencyOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config, showGraphs); err != nil {
 		fmt.Printf("   Warning: Could not create latency time-sequence graph: %v\n", err)
 	}
-	//---------------------------------------------------------
 	return nil
 }
 
 // ====================== CONNECTION RATE TEST ======================
-func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []byte) error {
+func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []byte, showGraphs bool) error {
 	if config.TestName == "" {
 		config.TestName = "connection-rate"
 	}
@@ -339,7 +338,6 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		waitForRouterReady()
 	}
 
-	//--------------------------------------------------------------------
 	// Start minimal HTTP echo server (reused from latency test)
 	serverPort := 5801
 	if config.Routers == 0 {
@@ -376,11 +374,10 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 	// Build hey command for connection rate
 	// -disable-keepalive is critical: every request = new TCP connection
 
-	//--------------------------------------------------------------------
 	fmt.Printf("   → Running connection-rate test → %s  (concurrency=%d clients, duration=%ds)\n",
 		targetURL, config.Concurrency, config.Duration)
 
-	// Normal text output (kept for summary + parseRequestsPerSec)
+	// Normal text output (for summary + parseRequestsPerSec)
 	heyArgs := []string{
 		"-disable-keepalive",
 		"-z", fmt.Sprintf("%ds", config.Duration),
@@ -417,8 +414,8 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 
 	fmt.Println("   → CSV data for graphing saved")
 
-	// NEW: Generate the moving-average connection rate graph
-	if err := processConnectionRateOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config); err != nil {
+	// Generate the moving-average connection rate graph
+	if err := processConnectionRateOutput(filepath.Join(outputDir, "hey_output.csv"), dataDir, graphicsDir, config, showGraphs); err != nil {
 		fmt.Printf("   Warning: Could not create connection-rate moving-average graph: %v\n", err)
 	}
 

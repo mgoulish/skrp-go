@@ -12,10 +12,6 @@ import (
 	"time"
 )
 
-// writeCommands creates a small set of shell scripts in the test's commands/ directory
-// so you can manually reproduce the exact client (and server) commands later.
-// Only the commands relevant to this test type are written.
-
 // writeCommands creates a small set of shell scripts + supporting files in the test's
 // commands/ directory so you can manually reproduce the exact test later.
 // - throughput tests get iperf3_server.sh + iperf3_client.sh
@@ -87,6 +83,8 @@ python3 http_server.py
 	// Router configs are already written by routers.go (router*.conf)
 }
 
+// Sometimes a json file contains instructions not for a test,
+// but for making a comparison graphic.
 func runComparison(skupperVersion string, config TestConfig) error {
 	if config.TestType == "latency" {
 		return runLatencyComparison(skupperVersion, config)
@@ -162,8 +160,9 @@ print "Comparison plot generated"
 	return nil
 }
 
-func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig) error {
-	fp("processing output...\n")
+// TODO: rename this to processThroughputOutput
+func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
+	fp("processOutput: showGraphs: %v\n", showGraphs)
 	WhoCalledMe()
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
@@ -235,8 +234,10 @@ set label sprintf("Max: %.1f Mbps", STATS_max) at graph 0.02, 0.90
 
 	pngPath := filepath.Join(graphicsDir, "throughput.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
-		_ = exec.Command("display", pngPath).Start()
-		fmt.Println("   → Graph displayed")
+		if showGraphs {
+			_ = exec.Command("display", pngPath).Start()
+			fmt.Println("   → Graph displayed")
+		}
 	} else {
 		fp("Gnuplot did not produce a graphic.\n")
 	}
@@ -262,7 +263,6 @@ func generateHeyCDFData(txtPath, cdfDataPath string) error {
 			inDistribution = true
 			continue
 		}
-		// No longer rely on a blank line (your files don't have one)
 		if inDistribution && strings.Contains(line, " in ") {
 			// Handle "10%% in 0.0002 secs" (or "10% in ...")
 			parts := strings.Split(line, " in ")
@@ -381,7 +381,9 @@ print "Latency CDF comparison generated"
 	pngPath := filepath.Join(graphicsDir, "latency_cdf_comparison.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		fmt.Printf("   → Latency CDF comparison graph created (%d KB)\n", info.Size()/1024)
-		_ = exec.Command("display", pngPath).Start()
+		if showGraphs {
+			_ = exec.Command("display", pngPath).Start()
+		}
 	} else {
 		fmt.Println("   Warning: latency_cdf_comparison.png is empty")
 	}
@@ -391,7 +393,7 @@ print "Latency CDF comparison generated"
 
 // processHttpLatencyOutput creates a clean time-sequence graph showing ONLY the simple moving average.
 // No individual request points — just the smooth trend line.
-func processHttpLatencyOutput(csvPath, dataDir, graphicsDir string, config TestConfig) error {
+func processHttpLatencyOutput(csvPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
 	fp("processing hey latency output for moving-average graph...\n")
 
 	if _, err := os.Stat(csvPath); os.IsNotExist(err) {
@@ -476,7 +478,9 @@ set label sprintf("Max: %.1f ms", STATS_max) at graph 0.02, 0.85
 	pngPath := filepath.Join(graphicsDir, "latency_time_series.png")
 	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
 		fmt.Printf("   → Latency moving-average graph created (%d KB)\n", info.Size()/1024)
-		_ = exec.Command("display", pngPath).Start()
+		if showGraphs {
+			_ = exec.Command("display", pngPath).Start()
+		}
 	} else {
 		fmt.Println("   Warning: latency_time_series.png was not created")
 	}
@@ -486,9 +490,7 @@ set label sprintf("Max: %.1f ms", STATS_max) at graph 0.02, 0.85
 
 // processConnectionRateOutput creates a clean moving-average graph of achieved connection rate (conn/s).
 // Downsampled so the line stays thin and readable even with long tests.
-// processConnectionRateOutput creates a clean moving-average graph of achieved connection rate (conn/s).
-// Downsampled so the line stays thin and readable even with long tests.
-func processConnectionRateOutput(csvPath, dataDir, graphicsDir string, config TestConfig) error {
+func processConnectionRateOutput(csvPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
 	fp("processing hey connection-rate output for moving-average graph...\n")
 
 	if _, err := os.Stat(csvPath); os.IsNotExist(err) {

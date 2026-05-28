@@ -1,5 +1,6 @@
 package main
 
+// TODO -- add 'comparison'  Maybe...
 var ValidTestTypes = map[string]struct{}{
 	"throughput":      {},
 	"latency":         {},
@@ -13,7 +14,7 @@ func IsValidTestType(testType string) bool {
 
 // types
 type TestConfig struct {
-	Type      string `json:"type"` // "test" or "comparison"
+	Type      string `json:"type"` // "throughput", "latency", or "connection-rate"
 	TestType  string `json:"test_type"`
 	TestName  string `json:"test_name"`
 	Duration  int    `json:"duration_seconds"`

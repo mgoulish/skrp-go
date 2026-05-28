@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,11 +10,10 @@ import (
 
 var fp = fmt.Printf
 
+var showGraphs bool
+
 func main() {
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: ./skrp <skupper_version> <config1.json> [config2.json] ...")
-		os.Exit(1)
-	}
+	var showGraphs bool
 
 	requiredExecutables := []string{"skrouterd", "iperf3", "gnuplot", "hey"}
 	for _, executable := range requiredExecutables {
@@ -23,15 +23,35 @@ func main() {
 		}
 	}
 
-	skupperVersion := os.Args[1]
-	configFiles := os.Args[2:]
+	flag.BoolVar(&showGraphs, "show-graphs", false,
+		"show popup graphs with 'display' after each test (default: off)")
 
-	fmt.Printf("🚀 SKRP - Skupper Router Performance Tester\n")
-	fmt.Printf("Skupper Version: %s\n\n", skupperVersion)
+	// Help text when someone runs ./skrp -h or ./skrp --help
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [flags] <skupper_version> <config1.json> [config2.json] ...\n\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "Flags:")
+		flag.PrintDefaults()
+	}
+
+	flag.Parse()
+
+	// After flag.Parse(), the remaining non-flag arguments are here
+	args := flag.Args()
+	fp("args: %v\n", args)
+	if len(args) < 2 {
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	skupperVersion := args[0]
+	configFiles := args[1:]
+
+	fmt.Printf("SKRP starting (skupper version: %s, %d config(s), show-graphs=%v)\n",
+		skupperVersion, len(configFiles), showGraphs)
 
 	for i, configPath := range configFiles {
 		fmt.Printf("=== Test %d/%d : %s ===\n", i+1, len(configFiles), configPath)
-		if err := runTestConfig(skupperVersion, configPath); err != nil {
+		if err := runTestConfig(skupperVersion, configPath, showGraphs); err != nil {
 			fmt.Printf("❌ Failed: %v\n", err)
 		}
 		if i < len(configFiles)-1 {

@@ -27,6 +27,7 @@ func waitForRouterReady() {
 // startSkupperRouters starts the router(s) and redirects ALL output (stdout + stderr)
 // exclusively to log files in the test's output/ directory.
 // No router logs appear on the console anymore.
+// They are so big that you can't see what is going on with the test.
 func startSkupperRouters(numRouters int, baseDir, commandsDir, outputDir string, cpu int) ([]*os.Process, error) {
 	var procs []*os.Process
 
@@ -74,6 +75,7 @@ tcpConnector {
 		}
 
 	} else if numRouters == 2 {
+		// TODO: generalize this to handle N routers.
 		// Router A
 		routerA := `router {
     mode: interior
