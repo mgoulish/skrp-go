@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 )
 
@@ -13,6 +14,14 @@ func main() {
 		fmt.Println("Usage: ./skrp <skupper_version> <config1.json> [config2.json] ...")
 		os.Exit(1)
 	}
+
+        requiredExecutables := []string{"skrouterd", "iperf3", "gnuplot", "hey"}
+        for _, executable := range requiredExecutables {
+            if ! commandExists(executable) {
+                fp("skrp: %s executable missing\n", executable)
+                os.Exit(1)
+            }
+        }
 
 	skupperVersion := os.Args[1]
 	configFiles := os.Args[2:]
@@ -30,3 +39,11 @@ func main() {
 		}
 	}
 }
+
+
+
+func commandExists(name string) bool {
+    _, err := exec.LookPath(name)
+    return err == nil
+}
+
