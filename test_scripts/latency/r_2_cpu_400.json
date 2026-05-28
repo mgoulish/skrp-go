@@ -1,6 +1,6 @@
 {
-  "test_type": "http-latency",
-  "test_name": "http-latency-2-router-cpu-400",
+  "test_type": "latency",
+  "test_name": "latency-2-router-cpu-400",
   "cpu": 400,
   "routers": 2,
   "num_requests": 100000,
