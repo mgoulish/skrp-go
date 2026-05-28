@@ -87,8 +87,6 @@ python3 http_server.py
 	// Router configs are already written by routers.go (router*.conf)
 }
 
-
-
 func runComparison(skupperVersion string, config TestConfig) error {
 	if config.TestType == "latency" {
 		return runLatencyComparison(skupperVersion, config)

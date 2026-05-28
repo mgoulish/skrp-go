@@ -25,6 +25,7 @@ type TestConfig struct {
 	YLabel    string `json:"y_label"`
 	PlotTitle string `json:"plot_title"`
 	CPU       int    `json:"cpu"`
+	CPUs      []int  `json:"cpus"`
 
 	// Latency
 	TargetURL   string `json:"target_url,omitempty"`   // e.g. "http://127.0.0.1:5800/ping"
