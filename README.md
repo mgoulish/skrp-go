@@ -29,10 +29,10 @@ Skupper Router Performance suite in Go
 go build -o skrp .
 
 # 2. Run a test (or many)
-`./skrp v1.2.3 tests/throughput/r_1_cpu_100.json`
+`./skrp v1.2.3 test_scripts/throughput/r_1_cpu_100.json`
 
 # 3. Run with graphs popping up
-`./skrp --show-graphs v1.2.3 tests/latency/r_1_cpu_200.json`
+`./skrp --show-graphs v1.2.3 tests_scripts/latency/r_1_cpu_200.json`
 
 
 
