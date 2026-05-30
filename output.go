@@ -160,10 +160,9 @@ print "Comparison plot generated"
 	return nil
 }
 
-// TODO: rename this to processThroughputOutput
-func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
-	fp("processOutput: showGraphs: %v\n", showGraphs)
-	WhoCalledMe()
+func processThroughputOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
+	fp("processOutput: TestName: |%s|\n", config.TestName )
+	//WhoCalledMe()
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
 	start := strings.Index(content, "{")
@@ -178,11 +177,13 @@ func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, sho
 	var throughputs []float64
 	for _, interval := range result.Intervals {
 		if interval.Sum.BitsPerSecond > 0 {
-			throughputs = append(throughputs, interval.Sum.BitsPerSecond/1e6)
+			//throughputs = append(throughputs, interval.Sum.BitsPerSecond/1e6)
+			throughputs = append(throughputs, interval.Sum.BitsPerSecond/1e9)
 		}
 	}
 	if result.End.SumSent.BitsPerSecond > 0 {
-		throughputs = append(throughputs, result.End.SumSent.BitsPerSecond/1e6)
+		//throughputs = append(throughputs, result.End.SumSent.BitsPerSecond/1e6)
+		throughputs = append(throughputs, result.End.SumSent.BitsPerSecond/1e9)
 	}
 
 	dataPath := filepath.Join(dataDir, "iperf3_client_output.data")
@@ -193,6 +194,7 @@ func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, sho
 	f.Close()
 
 	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
+        fp("MDEBUG cleanTitle: |%s|\n", cleanTitle )
 	relDataPath := filepath.Join("..", "output", "data", "iperf3_client_output.data")
 
 	// Build yrange directive conditionally
@@ -203,7 +205,7 @@ func processOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, sho
 
 	plotScript := `set terminal pngcairo size 1200,700 enhanced
 set output 'throughput.png'
-set title '` + cleanTitle + ` (` + strconv.Itoa(config.Parallel) + ` streams, ` + strconv.Itoa(config.Duration) + ` sec) - ` + strconv.Itoa(config.Routers) + ` router(s)'
+set title '` + cleanTitle + `
 set xlabel 'Time (seconds)'
 set ylabel '` + config.YLabel + `'
 ` + yrangeLine + `

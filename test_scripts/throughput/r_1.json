@@ -1,11 +1,12 @@
 {
   "test_type": "throughput",
   "cpus": [25, 50, 100],
-  "test_name": "1-router_cpu-25",
+  "test_name": "1-router",
   "duration_seconds": 30,
   "parallel_streams": 4,
   "protocol": "tcp",
   "port": 5201,
   "routers": 1,
-  "y_max_mbps": 150000
+  "y_max_mbps": 30,
+  "y_label": "Throughput (Gigabits/sec)"
 }

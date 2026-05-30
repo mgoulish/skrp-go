@@ -38,8 +38,6 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte,
 		config.Routers = 0
 	}
 
-	fp("runTest: running throughput test\n")
-
 	dateStr := time.Now().Format("2006_01_02")
 	baseDir := filepath.Join("skrp_results", skupperVersion, config.TestType, dateStr, config.TestName)
 	outputDir := filepath.Join(baseDir, "output")
@@ -107,12 +105,13 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	time.Sleep(2 * time.Second)
 
 	fmt.Printf("   → Starting iperf3 client to port %d\n", clientPort)
+        // Can't use "-f  g" here to print gigabits/sec, because we 
+        // are using JSON output, in which case iperf3 ignores -f flag.
 	clientArgs := []string{
 		"-c", "127.0.0.1",
 		"-p", strconv.Itoa(clientPort),
 		"-t", strconv.Itoa(config.Duration),
 		"-P", strconv.Itoa(config.Parallel),
-		"-f", "m",
 		"-J",
 	}
 	if config.Protocol == "udp" {
@@ -133,7 +132,7 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	serverCmd.Process.Kill()
 	serverCmd.Wait()
 
-	processOutput(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config, showGraphs)
+	processThroughputOutput(filepath.Join(outputDir, "iperf3_client_output.json"), dataDir, graphicsDir, config, showGraphs)
 	return nil
 }
 
@@ -308,8 +307,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		os.MkdirAll(dir, 0755)
 	}
 
-	// Write metadata (same pattern as latency/throughput)
-	writeCommands(config, commandsDir) // harmless even if it writes iperf scripts
+	writeCommands(config, commandsDir) 
 
 	type RunInfo struct {
 		SkupperVersion string     `json:"skupper_version"`
@@ -321,7 +319,6 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
 	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), rawData, 0644)
 
-	// Start routers if requested (exact same logic as latency test)
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
 		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
@@ -338,7 +335,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		waitForRouterReady()
 	}
 
-	// Start minimal HTTP echo server (reused from latency test)
+	// Start minimal HTTP echo server 
 	serverPort := 5801
 	if config.Routers == 0 {
 		serverPort = 5800

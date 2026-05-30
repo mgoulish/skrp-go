@@ -20,7 +20,7 @@ func runTestConfig(skupperVersion, configPath string, showGraphs bool) error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	fp("Config: %+v\n", config)
+	//fp("Config: %+v\n", config)
 
 	if !IsValidTestType(config.TestType) {
 		fp("Bad test type: %s\n", config.TestType)
