@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
+        "time"
 )
 
 // The test configs come from the json files whose paths you put on the command line.
@@ -26,10 +26,6 @@ func runTestConfig(skupperVersion, configPath string, showGraphs bool) error {
 		fp("Bad test type: %s\n", config.TestType)
 		fp("Valid test types are: %+v\n", ValidTestTypes)
 		return errors.New("bad test type")
-	}
-
-	if config.Type == "comparison" {
-		return runComparison(skupperVersion, config)
 	}
 
 	cpus := config.getCPUs()

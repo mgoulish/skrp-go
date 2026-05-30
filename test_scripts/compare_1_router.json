@@ -1,8 +1,0 @@
-{
-  "test_type": "throughput",
-  "type": "comparison",
-  "name": "0_vs_1_vs_2",
-  "title": "Throughput: 1 Router, All CPU Levels",
-  "tests": ["1-router_cpu-25", "1-router_cpu-50", "1-router_cpu-100", "1-router_cpu-200", "1-router_cpu-300", "1-router_cpu-400", "1-router_cpu-500" ],
-  "y_max_mbps": 130000
-}

@@ -31,11 +31,6 @@ type TestConfig struct {
 	TargetURL   string `json:"target_url,omitempty"`   // e.g. "http://127.0.0.1:5800/ping"
 	NumRequests int    `json:"num_requests,omitempty"` // default 10_000
 	Concurrency int    `json:"concurrency,omitempty"`  // default 50 (like iperf -P)
-
-	// Comparison only
-	ComparisonName string   `json:"name"`
-	Title          string   `json:"title"`
-	Tests          []string `json:"tests"`
 }
 
 type Iperf3Result struct {

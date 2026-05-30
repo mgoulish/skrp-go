@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // writeCommands creates a small set of shell scripts + supporting files in the test's
@@ -81,83 +80,6 @@ python3 http_server.py
 	}
 
 	// Router configs are already written by routers.go (router*.conf)
-}
-
-// Sometimes a json file contains instructions not for a test,
-// but for making a comparison graphic.
-func runComparison(skupperVersion string, config TestConfig) error {
-	if config.TestType == "latency" {
-		return runLatencyComparison(skupperVersion, config)
-	}
-
-	if len(config.Tests) == 0 {
-		return fmt.Errorf("comparison needs 'tests' array with full paths to iperf3_client_output.data files")
-	}
-
-	fmt.Printf("   → Generating comparison: %s\n", config.ComparisonName)
-
-	dateStr := time.Now().Format("2006_01_02")
-	compDir := filepath.Join("skrp_results", skupperVersion, "comparison", dateStr, config.ComparisonName)
-	graphicsDir := filepath.Join(compDir, "graphics")
-	os.MkdirAll(graphicsDir, 0755)
-
-	var plotLines []string
-	colors := []string{"#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"}
-
-	for i, dataFile := range config.Tests {
-		absData, _ := filepath.Abs(dataFile)
-		if _, err := os.Stat(absData); err != nil {
-			fmt.Printf("   Warning: Could not find data file '%s'\n", dataFile)
-			continue
-		}
-
-		// Derive a nice label from the directory structure
-		// (assumes: .../<testname>/output/data/iperf3_client_output.data)
-		testNameDir := filepath.Dir(filepath.Dir(filepath.Dir(absData)))
-		name := filepath.Base(testNameDir)
-		label := strings.TrimSuffix(name, "_routers") + " routers"
-
-		color := colors[i%len(colors)]
-
-		plotLines = append(plotLines, fmt.Sprintf(`'%s' using 0:1 with linespoints lw 2.5 pt 7 lc rgb "%s" title "%s"`,
-			absData, color, label))
-	}
-
-	if len(plotLines) == 0 {
-		return fmt.Errorf("no valid data files found")
-	}
-
-	plotScript := `set terminal pngcairo size 1400,800 enhanced
-set output 'comparison.png'
-set title '` + config.Title + `'
-set xlabel 'Time (seconds)'
-set ylabel 'Throughput (Mbps)'
-set grid
-set yrange [0:]
-set key outside
-
-plot ` + strings.Join(plotLines, ", ") + `
-
-print "Comparison plot generated"
-`
-
-	gpPath := filepath.Join(graphicsDir, "comparison_plot.gp")
-	_ = os.WriteFile(gpPath, []byte(plotScript), 0644)
-
-	fmt.Println("   → Running gnuplot...")
-	gnuplotCmd := exec.Command("gnuplot", "comparison_plot.gp")
-	gnuplotCmd.Dir = graphicsDir
-	gnuplotCmd.Run()
-
-	pngPath := filepath.Join(graphicsDir, "comparison.png")
-	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
-		fmt.Printf("   → Comparison graph created (%d KB)\n", info.Size()/1024)
-		_ = exec.Command("display", pngPath).Start()
-	} else {
-		fmt.Println("   Warning: comparison.png is empty")
-	}
-
-	return nil
 }
 
 func processThroughputOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
@@ -307,85 +229,6 @@ func generateHeyCDFData(txtPath, cdfDataPath string) error {
 	return nil
 }
 
-// ====================== LATENCY COMPARISON ======================
-func runLatencyComparison(skupperVersion string, config TestConfig) error {
-	if len(config.Tests) == 0 {
-		return fmt.Errorf("comparison needs 'tests' array with full paths to hey_output.txt files")
-	}
-
-	fmt.Printf("   → Generating latency CDF comparison: %s\n", config.ComparisonName)
-
-	dateStr := time.Now().Format("2006_01_02")
-	compDir := filepath.Join("skrp_results", skupperVersion, "comparison", dateStr, config.ComparisonName)
-	graphicsDir := filepath.Join(compDir, "graphics")
-	dataDir := filepath.Join(compDir, "data")
-	os.MkdirAll(graphicsDir, 0755)
-	os.MkdirAll(dataDir, 0755)
-
-	var plotLines []string
-	colors := []string{"#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"}
-
-	for i, txtFile := range config.Tests {
-		if _, err := os.Stat(txtFile); err != nil {
-			fmt.Printf("   Warning: Could not find %s\n", txtFile)
-			continue
-		}
-
-		cdfData := filepath.Join(dataDir, fmt.Sprintf("test%d.cdf.data", i))
-		if err := generateHeyCDFData(txtFile, cdfData); err != nil {
-			fmt.Printf("   Warning: Failed to generate CDF for %s: %v\n", txtFile, err)
-			continue
-		}
-
-		label := filepath.Base(filepath.Dir(filepath.Dir(txtFile)))
-		color := colors[i%len(colors)]
-		absData, _ := filepath.Abs(cdfData)
-
-		plotLines = append(plotLines, fmt.Sprintf(`'%s' using 1:2 with lines lw 2.5 lc rgb "%s" title "%s"`,
-			absData, color, label))
-	}
-
-	if len(plotLines) == 0 {
-		return fmt.Errorf("no valid latency data files found")
-	}
-
-	plotScript := `set terminal pngcairo size 1200,500 enhanced
-set output 'latency_cdf_comparison.png'
-set title '` + config.Title + `'
-set xlabel 'Latency (milliseconds)'
-set ylabel 'Percentage of requests (%)'
-set logscale x
-set xrange [0.1:200]
-set yrange [0:]
-set xtics (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200)
-set grid
-set key outside
-
-plot ` + strings.Join(plotLines, ", ") + `
-
-print "Latency CDF comparison generated"
-`
-
-	gpPath := filepath.Join(graphicsDir, "latency_cdf_comparison.gp")
-	_ = os.WriteFile(gpPath, []byte(plotScript), 0644)
-
-	fmt.Println("   → Running gnuplot...")
-	gnuplotCmd := exec.Command("gnuplot", "latency_cdf_comparison.gp")
-	gnuplotCmd.Dir = graphicsDir
-	gnuplotCmd.Run()
-
-	pngPath := filepath.Join(graphicsDir, "latency_cdf_comparison.png")
-	if info, _ := os.Stat(pngPath); info != nil && info.Size() > 1000 {
-		fmt.Printf("   → Latency CDF comparison graph created (%d KB)\n", info.Size()/1024)
-		if showGraphs {
-			_ = exec.Command("display", pngPath).Start()
-		}
-	} else {
-		fmt.Println("   Warning: latency_cdf_comparison.png is empty")
-	}
-
-	return nil
-}
 
 // processHttpLatencyOutput creates a clean time-sequence graph showing ONLY the simple moving average.
 // No individual request points — just the smooth trend line.
