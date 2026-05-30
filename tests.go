@@ -86,7 +86,7 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte,
 		fmt.Printf("   Warning: iperf3 had issues: %v\n", err)
 	}
 
-	fmt.Printf("✅ Test completed! Y-max = %d Mbps\n", config.YMaxMbps)
+	fmt.Printf("✅ Test completed!\n")
 	return nil
 }
 

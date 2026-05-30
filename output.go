@@ -132,8 +132,8 @@ set output 'comparison.png'
 set title '` + config.Title + `'
 set xlabel 'Time (seconds)'
 set ylabel 'Throughput (Mbps)'
-set yrange [0:` + strconv.Itoa(config.YMaxMbps) + `]
 set grid
+set yrange [0:]
 set key outside
 
 plot ` + strings.Join(plotLines, ", ") + `
@@ -197,18 +197,12 @@ func processThroughputOutput(jsonPath, dataDir, graphicsDir string, config TestC
         fp("MDEBUG cleanTitle: |%s|\n", cleanTitle )
 	relDataPath := filepath.Join("..", "output", "data", "iperf3_client_output.data")
 
-	// Build yrange directive conditionally
-	yrangeLine := "set yrange [0:]"
-	if config.YMaxMbps != 0 {
-		yrangeLine = "set yrange [0:" + strconv.Itoa(config.YMaxMbps) + "]"
-	}
-
 	plotScript := `set terminal pngcairo size 1200,700 enhanced
 set output 'throughput.png'
 set title '` + cleanTitle + `
 set xlabel 'Time (seconds)'
 set ylabel '` + config.YLabel + `'
-` + yrangeLine + `
+set yrange [0:]
 set grid
 set key outside
 
@@ -362,8 +356,8 @@ set xlabel 'Latency (milliseconds)'
 set ylabel 'Percentage of requests (%)'
 set logscale x
 set xrange [0.1:200]
+set yrange [0:]
 set xtics (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200)
-set yrange [0:100]
 set grid
 set key outside
 
@@ -459,6 +453,7 @@ set output 'latency_time_series.png'
 set title '` + cleanTitle + ` - Latency Moving Average (` + strconv.Itoa(config.Concurrency) + ` concurrent)'
 set xlabel 'Request Number'
 set ylabel 'Latency (ms)'
+set yrange [0:]
 set grid
 set key outside
 
@@ -580,6 +575,7 @@ set output 'connection_rate_time_series.png'
 set title '` + cleanTitle + ` - Connection Rate Moving Average (` + strconv.Itoa(config.Concurrency) + ` concurrent)'
 set xlabel 'Connection Number'
 set ylabel 'Connection Rate (conn/s)'
+set yrange [0:]
 set grid
 set key outside
 

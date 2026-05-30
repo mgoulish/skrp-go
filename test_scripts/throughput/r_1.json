@@ -7,6 +7,5 @@
   "protocol": "tcp",
   "port": 5201,
   "routers": 1,
-  "y_max_mbps": 30,
   "y_label": "Throughput (Gigabits/sec)"
 }
