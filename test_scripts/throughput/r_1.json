@@ -1,7 +1,7 @@
 {
   "test_type": "throughput",
   "cpus": [25, 50, 100],
-  "test_name": "1-router",
+  "test_name": "routers_1",
   "duration_seconds": 30,
   "parallel_streams": 4,
   "protocol": "tcp",

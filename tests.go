@@ -105,8 +105,8 @@ func runIperf3Test(config TestConfig, outputDir, dataDir, graphicsDir, commandsD
 	time.Sleep(2 * time.Second)
 
 	fmt.Printf("   → Starting iperf3 client to port %d\n", clientPort)
-        // Can't use "-f  g" here to print gigabits/sec, because we 
-        // are using JSON output, in which case iperf3 ignores -f flag.
+	// Can't use "-f  g" here to print gigabits/sec, because we
+	// are using JSON output, in which case iperf3 ignores -f flag.
 	clientArgs := []string{
 		"-c", "127.0.0.1",
 		"-p", strconv.Itoa(clientPort),
@@ -307,7 +307,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		os.MkdirAll(dir, 0755)
 	}
 
-	writeCommands(config, commandsDir) 
+	writeCommands(config, commandsDir)
 
 	type RunInfo struct {
 		SkupperVersion string     `json:"skupper_version"`
@@ -335,7 +335,7 @@ func runConnectionRateTest(skupperVersion string, config TestConfig, rawData []b
 		waitForRouterReady()
 	}
 
-	// Start minimal HTTP echo server 
+	// Start minimal HTTP echo server
 	serverPort := 5801
 	if config.Routers == 0 {
 		serverPort = 5800

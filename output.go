@@ -83,7 +83,7 @@ python3 http_server.py
 }
 
 func processThroughputOutput(jsonPath, dataDir, graphicsDir string, config TestConfig, showGraphs bool) error {
-	fp("processOutput: TestName: |%s|\n", config.TestName )
+	fp("processOutput: TestName: |%s|\n", config.TestName)
 	//WhoCalledMe()
 	raw, _ := os.ReadFile(jsonPath)
 	content := string(raw)
@@ -116,7 +116,7 @@ func processThroughputOutput(jsonPath, dataDir, graphicsDir string, config TestC
 	f.Close()
 
 	cleanTitle := strings.ReplaceAll(config.TestName, "_", "\\_")
-        fp("MDEBUG cleanTitle: |%s|\n", cleanTitle )
+	fp("MDEBUG cleanTitle: |%s|\n", cleanTitle)
 	relDataPath := filepath.Join("..", "output", "data", "iperf3_client_output.data")
 
 	plotScript := `set terminal pngcairo size 1200,700 enhanced
@@ -228,7 +228,6 @@ func generateHeyCDFData(txtPath, cdfDataPath string) error {
 
 	return nil
 }
-
 
 // processHttpLatencyOutput creates a clean time-sequence graph showing ONLY the simple moving average.
 // No individual request points — just the smooth trend line.

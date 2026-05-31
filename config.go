@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-        "time"
+	"time"
 )
 
 // The test configs come from the json files whose paths you put on the command line.
