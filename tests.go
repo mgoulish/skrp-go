@@ -454,13 +454,36 @@ func runComparisonSpecifier(configPath string, rawData []byte, showGraphs bool) 
 		return fmt.Errorf("invalid comparison specifier: %w", err)
 	}
 
-	// Parse all selector fields (everything except comparison_type and y_label)
+	// Parse all selector fields
 	var raw map[string]interface{}
 	json.Unmarshal(rawData, &raw)
 	spec.Selectors = make(map[string]interface{})
 	for k, v := range raw {
 		if k != "comparison_type" && k != "y_label" {
 			spec.Selectors[k] = v
+		}
+	}
+
+	// === NEW: Resolve "latest" values BEFORE searching ===
+	testType := spec.ComparisonType
+
+	if ver, ok := spec.Selectors["skupper_version"]; ok {
+		if s, ok := ver.(string); ok && s == "latest" {
+			resolved := getLatestSkupperVersion()
+			spec.Selectors["skupper_version"] = resolved
+			fmt.Printf("   → Resolved skupper_version 'latest' → %s\n", resolved)
+		}
+	}
+
+	if d, ok := spec.Selectors["date"]; ok {
+		if s, ok := d.(string); ok && s == "latest" {
+			ver := ""
+			if v, ok := spec.Selectors["skupper_version"]; ok {
+				ver = fmt.Sprintf("%v", v)
+			}
+			resolved := getLatestDate(ver, testType)
+			spec.Selectors["date"] = resolved
+			fmt.Printf("   → Resolved date 'latest' → %s\n", resolved)
 		}
 	}
 
@@ -471,6 +494,7 @@ func runComparisonSpecifier(configPath string, rawData []byte, showGraphs bool) 
 	}
 
 	fmt.Printf("   → Comparison: %s | varying on %s = %v\n", spec.ComparisonType, varyingField, varyingValues)
+	fmt.Printf("   → Using skupper_version=%v, date=%v\n", spec.Selectors["skupper_version"], spec.Selectors["date"])
 
 	matchingRuns, err := findMatchingTestRuns(spec)
 	if err != nil {
@@ -480,7 +504,7 @@ func runComparisonSpecifier(configPath string, rawData []byte, showGraphs bool) 
 		return fmt.Errorf("no matching tests found for this comparison")
 	}
 
-	// For now we only support throughput comparisons (easy to extend later)
+	// For now we only support throughput comparisons
 	if spec.ComparisonType == "throughput" {
 		return generateThroughputComparisonGraph(configPath, spec, varyingField, matchingRuns, showGraphs)
 	}
@@ -650,4 +674,36 @@ func getVaryingValueFromRun(runDir string, field string) interface{} {
 	default:
 		return "?"
 	}
+}
+
+// getLatestSkupperVersion returns the newest skupper version directory (lexicographically newest)
+func getLatestSkupperVersion() string {
+	entries, _ := os.ReadDir("skrp_results")
+	var latest string
+	for _, e := range entries {
+		if e.IsDir() && e.Name() != "comparisons" {
+			if latest == "" || e.Name() > latest {
+				latest = e.Name()
+			}
+		}
+	}
+	return latest
+}
+
+// getLatestDate returns the newest date directory for a given skupper version + test type
+func getLatestDate(version, testType string) string {
+	if version == "" {
+		return ""
+	}
+	path := filepath.Join("skrp_results", version, testType)
+	entries, _ := os.ReadDir(path)
+	var latest string
+	for _, e := range entries {
+		if e.IsDir() {
+			if latest == "" || e.Name() > latest {
+				latest = e.Name()
+			}
+		}
+	}
+	return latest
 }
