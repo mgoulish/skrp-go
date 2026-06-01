@@ -1,0 +1,8 @@
+{
+  "comparison_type": "throughput",
+  "skupper_version": "latest",
+  "date": "latest",
+  "cpu": [25, 50, 100],
+  "routers": 1,
+  "y_label": "Throughput (GBit/sec)"
+}

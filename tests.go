@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -52,13 +53,13 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte,
 	// Write commands FIRST
 	writeCommands(config, commandsDir)
 
-	// Save metadata
-	type RunInfo struct {
-		SkupperVersion string     `json:"skupper_version"`
-		TestConfig     TestConfig `json:"test_config"`
-		RunTime        time.Time  `json:"run_time"`
+	// Save metadata (now using shared RunInfo with Date)
+	runInfo := RunInfo{
+		SkupperVersion: skupperVersion,
+		Date:           dateStr, // <-- NEW
+		TestConfig:     config,
+		RunTime:        time.Now(),
 	}
-	runInfo := RunInfo{SkupperVersion: skupperVersion, TestConfig: config, RunTime: time.Now()}
 	infoBytes, _ := json.MarshalIndent(runInfo, "", "  ")
 	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
 	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), rawData, 0644)
@@ -86,7 +87,7 @@ func runThroughputTest(skupperVersion string, config TestConfig, rawData []byte,
 		fmt.Printf("   Warning: iperf3 had issues: %v\n", err)
 	}
 
-	fmt.Printf("✅ Test completed!\n")
+	fmt.Printf("Test completed!\n")
 	return nil
 }
 
@@ -166,20 +167,21 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 		os.MkdirAll(dir, 0755)
 	}
 
-	// Write commands + metadata (exact same pattern as runNormalTest)
+	// Write commands + metadata
 	writeCommands(config, commandsDir)
 
-	type RunInfo struct {
-		SkupperVersion string     `json:"skupper_version"`
-		TestConfig     TestConfig `json:"test_config"`
-		RunTime        time.Time  `json:"run_time"`
+	// Save metadata (now using shared RunInfo with Date)
+	runInfo := RunInfo{
+		SkupperVersion: skupperVersion,
+		Date:           dateStr, // <-- NEW for comparisons
+		TestConfig:     config,
+		RunTime:        time.Now(),
 	}
-	runInfo := RunInfo{SkupperVersion: skupperVersion, TestConfig: config, RunTime: time.Now()}
 	infoBytes, _ := json.MarshalIndent(runInfo, "", "  ")
 	_ = os.WriteFile(filepath.Join(outputDir, "run_info.json"), infoBytes, 0644)
 	_ = os.WriteFile(filepath.Join(outputDir, "config_used.json"), rawData, 0644)
 
-	// === Start routers if requested (exact copy from runNormalTest) ===
+	// === Start routers if requested ===
 	var routerProcs []*os.Process
 	if config.Routers > 0 {
 		fmt.Printf("   → Starting %d router(s)...\n", config.Routers)
@@ -196,7 +198,7 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 		waitForRouterReady()
 	}
 
-	// === Start minimal HTTP echo server (the backend) ===
+	// === Start minimal HTTP echo server ===
 	serverPort := 5801
 	if config.Routers == 0 {
 		serverPort = 5800
@@ -218,9 +220,9 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 		}
 		close(serverDone)
 	}()
-	time.Sleep(800 * time.Millisecond) // let server start
+	time.Sleep(800 * time.Millisecond)
 
-	// === Decide target URL for hey (through router or direct) ===
+	// Target URL
 	targetURL := "http://127.0.0.1:5800/ping"
 	if config.Routers == 0 {
 		targetURL = fmt.Sprintf("http://127.0.0.1:%d/ping", serverPort)
@@ -229,16 +231,8 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 	fmt.Printf("   → Running hey latency test → %s  (concurrency=%d, requests=%d)\n",
 		targetURL, config.Concurrency, config.NumRequests)
 
-	//==========================================
-	fmt.Printf("   → Running hey latency test → %s  (concurrency=%d, requests=%d)\n",
-		targetURL, config.Concurrency, config.NumRequests)
-
-	// Normal text output (kept for summary + latency distribution parsing)
-	heyArgs := []string{
-		"-n", strconv.Itoa(config.NumRequests),
-		"-c", strconv.Itoa(config.Concurrency),
-		targetURL,
-	}
+	// Normal output
+	heyArgs := []string{"-n", strconv.Itoa(config.NumRequests), "-c", strconv.Itoa(config.Concurrency), targetURL}
 	cmd := exec.Command("hey", heyArgs...)
 	output, err := cmd.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.txt"), output, 0644)
@@ -249,22 +243,16 @@ func runHttpLatencyTest(skupperVersion string, config TestConfig, rawData []byte
 		fmt.Println("   → hey latency test completed successfully")
 	}
 
-	// === Run hey ===
-	// Extra CSV run for per-request latency time-series (very fast, same load)
+	// CSV for graphing
 	fmt.Printf("   → Running hey again for CSV data \n")
-	heyArgsCSV := []string{
-		"-n", strconv.Itoa(config.NumRequests),
-		"-c", strconv.Itoa(config.Concurrency),
-		"-o", "csv",
-		targetURL,
-	}
+	heyArgsCSV := []string{"-n", strconv.Itoa(config.NumRequests), "-c", strconv.Itoa(config.Concurrency), "-o", "csv", targetURL}
 	cmdCSV := exec.Command("hey", heyArgsCSV...)
 	csvOutput, _ := cmdCSV.CombinedOutput()
 	_ = os.WriteFile(filepath.Join(outputDir, "hey_output.csv"), csvOutput, 0644)
 
 	fmt.Println("   → CSV data for graphing saved")
 
-	// Graceful shutdown of the echo server
+	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if shutdownErr := server.Shutdown(ctx); shutdownErr != nil {
@@ -455,4 +443,211 @@ func WhoCalledMe() {
 
 	fmt.Printf("Called by: %s\n", callerFunction.Name())
 	fmt.Printf("Found in:  %s (Line: %d)\n\n", file, line)
+}
+
+// ====================== COMPARISON SPECIFIER SUPPORT ======================
+
+// runComparisonSpecifier is the new entry point for your comparison JSON files
+func runComparisonSpecifier(configPath string, rawData []byte, showGraphs bool) error {
+	var spec ComparisonSpecifier
+	if err := json.Unmarshal(rawData, &spec); err != nil {
+		return fmt.Errorf("invalid comparison specifier: %w", err)
+	}
+
+	// Parse all selector fields (everything except comparison_type and y_label)
+	var raw map[string]interface{}
+	json.Unmarshal(rawData, &raw)
+	spec.Selectors = make(map[string]interface{})
+	for k, v := range raw {
+		if k != "comparison_type" && k != "y_label" {
+			spec.Selectors[k] = v
+		}
+	}
+
+	// Exactly one field must be a list (the varying axis)
+	varyingField, varyingValues, err := identifyVaryingField(spec.Selectors)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("   → Comparison: %s | varying on %s = %v\n", spec.ComparisonType, varyingField, varyingValues)
+
+	matchingRuns, err := findMatchingTestRuns(spec)
+	if err != nil {
+		return err
+	}
+	if len(matchingRuns) == 0 {
+		return fmt.Errorf("no matching tests found for this comparison")
+	}
+
+	// For now we only support throughput comparisons (easy to extend later)
+	if spec.ComparisonType == "throughput" {
+		return generateThroughputComparisonGraph(configPath, spec, varyingField, matchingRuns, showGraphs)
+	}
+
+	return fmt.Errorf("comparison_type '%s' not supported yet", spec.ComparisonType)
+}
+
+// identifyVaryingField returns the key that has a []value and the list itself
+func identifyVaryingField(selectors map[string]interface{}) (string, []interface{}, error) {
+	var varying string
+	var values []interface{}
+	count := 0
+	for k, v := range selectors {
+		if arr, ok := v.([]interface{}); ok {
+			count++
+			varying = k
+			values = arr
+		}
+	}
+	if count != 1 {
+		return "", nil, fmt.Errorf("exactly one selector field must be a list; found %d", count)
+	}
+	return varying, values, nil
+}
+
+// findMatchingTestRuns walks skrp_results and returns the base dirs of matching tests
+func findMatchingTestRuns(spec ComparisonSpecifier) ([]string, error) {
+	var matches []string
+	err := filepath.Walk("skrp_results", func(path string, info os.FileInfo, err error) error {
+		if err != nil || !strings.HasSuffix(path, "/output/run_info.json") {
+			return nil
+		}
+		data, _ := os.ReadFile(path)
+		var ri RunInfo
+		if json.Unmarshal(data, &ri) != nil {
+			return nil
+		}
+
+		if matchesSpec(ri, spec) {
+			baseDir := filepath.Dir(filepath.Dir(path))
+			matches = append(matches, baseDir)
+		}
+		return nil
+	})
+	return matches, err
+}
+
+func matchesSpec(ri RunInfo, spec ComparisonSpecifier) bool {
+	for field, wantRaw := range spec.Selectors {
+		// skip the varying field (the one that is a list)
+		if _, isSlice := wantRaw.([]interface{}); isSlice {
+			continue
+		}
+
+		// treat "latest" as wildcard
+		if s, ok := wantRaw.(string); ok && s == "latest" {
+			continue
+		}
+
+		var got interface{}
+		switch field {
+		case "skupper_version":
+			got = ri.SkupperVersion
+		case "date":
+			got = ri.Date
+		case "cpu":
+			got = ri.TestConfig.CPU
+		case "routers":
+			got = ri.TestConfig.Routers
+		default:
+			continue
+		}
+
+		if !valuesEqual(got, wantRaw) {
+			return false
+		}
+	}
+	return true
+}
+
+// Helper: handles int/float64 comparison (the most common mismatch)
+func valuesEqual(a, b interface{}) bool {
+	if a == b {
+		return true
+	}
+	// int vs float64
+	if ia, ok := a.(int); ok {
+		if fb, ok := b.(float64); ok {
+			return float64(ia) == fb
+		}
+	}
+	if fa, ok := a.(float64); ok {
+		if ib, ok := b.(int); ok {
+			return fa == float64(ib)
+		}
+	}
+	return false
+}
+
+// generateThroughputComparisonGraph creates the multi-plot graph
+func generateThroughputComparisonGraph(specPath string, spec ComparisonSpecifier, varyingField string, runs []string, showGraphs bool) error {
+	compName := strings.TrimSuffix(filepath.Base(specPath), ".json")
+	compDir := filepath.Join("skrp_results", "comparisons", compName)
+	graphicsDir := filepath.Join(compDir, "graphics")
+	dataDir := filepath.Join(compDir, "data")
+	os.MkdirAll(graphicsDir, 0755)
+	os.MkdirAll(dataDir, 0755)
+
+	var plotLines []string
+	for i, runDir := range runs {
+		srcData := filepath.Join(runDir, "output", "data", "iperf3_client_output.data")
+		if _, err := os.Stat(srcData); os.IsNotExist(err) {
+			continue
+		}
+		dest := filepath.Join(dataDir, fmt.Sprintf("series_%d.data", i))
+		_ = copyFile(srcData, dest)
+
+		label := fmt.Sprintf("%s %v", varyingField, getVaryingValueFromRun(runDir, varyingField))
+		plotLines = append(plotLines, fmt.Sprintf("'%s' using 0:1 with linespoints lw 2 pt %d title '%s'",
+			filepath.Join("..", "data", filepath.Base(dest)), i+1, label))
+	}
+
+	title := fmt.Sprintf("%s Comparison Across %s Values", strings.Title(spec.ComparisonType), strings.Title(varyingField))
+
+	plotScript := fmt.Sprintf(`set terminal pngcairo size 1400,800 enhanced
+set output 'comparison.png'
+set title '%s'
+set xlabel 'Time (seconds)'
+set ylabel '%s'
+set yrange [0:]
+set grid
+set key outside
+
+plot %s
+
+`, title, spec.YLabel, strings.Join(plotLines, ", "))
+
+	_ = os.WriteFile(filepath.Join(graphicsDir, "comparison_plot.gp"), []byte(plotScript), 0644)
+
+	cmd := exec.Command("gnuplot", "comparison_plot.gp")
+	cmd.Dir = graphicsDir
+	output, _ := cmd.CombinedOutput()
+	fmt.Printf("Gnuplot output:\n%s\n", string(output))
+
+	png := filepath.Join(graphicsDir, "comparison.png")
+	fmt.Printf("   → Comparison graph written to %s\n", png)
+	if showGraphs {
+		exec.Command("display", png).Start()
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	data, _ := os.ReadFile(src)
+	return os.WriteFile(dst, data, 0644)
+}
+
+func getVaryingValueFromRun(runDir string, field string) interface{} {
+	data, _ := os.ReadFile(filepath.Join(runDir, "output", "run_info.json"))
+	var ri RunInfo
+	json.Unmarshal(data, &ri)
+	switch field {
+	case "cpu":
+		return ri.TestConfig.CPU
+	case "routers":
+		return ri.TestConfig.Routers
+	default:
+		return "?"
+	}
 }

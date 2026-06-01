@@ -1,5 +1,10 @@
 package main
 
+import (
+	"encoding/json"
+	"time"
+)
+
 // TODO -- add 'comparison'  Maybe...
 var ValidTestTypes = map[string]struct{}{
 	"throughput":      {},
@@ -10,6 +15,32 @@ var ValidTestTypes = map[string]struct{}{
 func IsValidTestType(testType string) bool {
 	_, ok := ValidTestTypes[testType]
 	return ok
+}
+
+// RunInfo is now shared (was duplicated inside the test functions)
+type RunInfo struct {
+	SkupperVersion string     `json:"skupper_version"`
+	Date           string     `json:"date"` // <-- NEW for comparison logic
+	TestConfig     TestConfig `json:"test_config"`
+	RunTime        time.Time  `json:"run_time"`
+}
+
+// ComparisonSpecifier is the new comparison file format you described
+type ComparisonSpecifier struct {
+	ComparisonType string `json:"comparison_type"`
+	YLabel         string `json:"y_label"`
+	// Selectors are everything else; we parse them as interface{} so they can be scalar or []
+	Selectors map[string]interface{} `json:"-"` // populated by us after unmarshal
+}
+
+// IsComparisonFile returns true if this looks like your new specifier format
+func IsComparisonFile(data []byte) bool {
+	var m map[string]interface{}
+	if json.Unmarshal(data, &m) != nil {
+		return false
+	}
+	_, hasType := m["comparison_type"]
+	return hasType
 }
 
 // types

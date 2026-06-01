@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -24,36 +25,63 @@ func main() {
 	}
 
 	flag.BoolVar(&showGraphs, "show-graphs", false,
-		"show popup graphs with 'display' after each test (default: off)")
+		"show popup graphs with 'display' after each test/comparison (default: off)")
 
-	// Help text when someone runs ./skrp -h or ./skrp --help
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s [flags] <skupper_version> <config1.json> [config2.json] ...\n\n", os.Args[0])
-		fmt.Fprintln(os.Stderr, "Flags:")
+		fmt.Fprintf(os.Stderr, "Usage: %s [flags] [skupper_version] <config1.json> [config2.json ...]\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "   If a .json contains \"comparison_type\" it is treated as a comparison specifier.")
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
 
-	// After flag.Parse(), the remaining non-flag arguments are here
 	args := flag.Args()
-	fp("args: %v\n", args)
-	if len(args) < 2 {
+	if len(args) < 1 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
-	skupperVersion := args[0]
-	configFiles := args[1:]
+	var skupperVersion string
+	configFiles := args
 
-	fmt.Printf("SKRP starting (skupper version: %s, %d config(s), show-graphs=%v)\n",
+	// If first arg is NOT a .json → treat it as skupper_version (for normal tests)
+	if !strings.HasSuffix(args[0], ".json") {
+		skupperVersion = args[0]
+		configFiles = args[1:]
+		if len(configFiles) == 0 {
+			flag.Usage()
+			os.Exit(1)
+		}
+	}
+
+	fmt.Printf("SKRP starting (skupper version: %s, %d file(s), show-graphs=%v)\n",
 		skupperVersion, len(configFiles), showGraphs)
 
 	for i, configPath := range configFiles {
-		fmt.Printf("=== Test %d/%d : %s ===\n", i+1, len(configFiles), configPath)
-		if err := runTestConfig(skupperVersion, configPath, showGraphs); err != nil {
-			fmt.Printf("❌ Failed: %v\n", err)
+		fmt.Printf("=== Processing %d/%d : %s ===\n", i+1, len(configFiles), configPath)
+
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			fmt.Printf("Failed to read %s: %v\n", configPath, err)
+			continue
 		}
+
+		if IsComparisonFile(data) {
+			// NEW: comparison path
+			if err := runComparisonSpecifier(configPath, data, showGraphs); err != nil {
+				fmt.Printf("Comparison failed: %v\n", err)
+			}
+		} else {
+			// regular test
+			if skupperVersion == "" {
+				fmt.Println("Error: normal tests require a skupper_version argument")
+				continue
+			}
+			if err := runTestConfig(skupperVersion, configPath, showGraphs); err != nil {
+				fmt.Printf("Test failed: %v\n", err)
+			}
+		}
+
 		if i < len(configFiles)-1 {
 			time.Sleep(4 * time.Second)
 		}
